@@ -1,0 +1,64 @@
+name: monthly
+
+# Une release par mois, sans intervention humaine : on suit nixpkgs-unstable,
+# on ouvre une PR, la CI construit et teste, le merge déclenche une release.
+# Le tag vYYYY.MM est posé à la main après merge (ou par un tag automatique si
+# tu préfères — la CI fait exactement la même chose).
+on:
+  schedule:
+    - cron: "0 6 1 * *" # le 1er du mois à 06:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  bump:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Installer Nix
+        uses: DeterminateSystems/nix-installer-action@main
+
+      - name: Mettre à jour flake.lock
+        run: nix flake update
+
+      - name: Mettre à jour la version CalVer
+        id: version
+        run: |
+          v=$(date -u +%Y.%m)
+          sed -i -E "s/^([[:space:]]*version = \")[0-9]{4}\.[0-9]{2}(\";.*)$/\1${v}\2/" flake.nix
+          grep -n 'version = "' flake.nix
+          echo "value=$v" >> "$GITHUB_OUTPUT"
+
+      - name: Résumé du changement de nixpkgs
+        run: |
+          {
+            echo "### nixpkgs"
+            echo
+            echo '```'
+            nix flake metadata --json | jq -r '.locks.nodes.nixpkgs.locked | "rev  \(.rev)\ndate \(.lastModified | todate)"'
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Ouvrir la PR
+        uses: peter-evans/create-pull-request@v8
+        with:
+          branch: release/${{ steps.version.outputs.value }}
+          title: "release: ${{ steps.version.outputs.value }}"
+          commit-message: "release: ${{ steps.version.outputs.value }}"
+          body: |
+            Mise à jour mensuelle automatique.
+
+            - `flake.lock` suit `nixos-unstable`
+            - version CalVer → `${{ steps.version.outputs.value }}`
+
+            La CI construit l'ISO, lance les tests de boot BIOS et EFI, vérifie
+            le budget de taille et publie le manifeste de composition.
+
+            **Ne pas merger si un test échoue** : on reste alors sur le dernier
+            mois vert. C'est la règle qui garantit qu'une release ne casse pas
+            silencieusement.
+          delete-branch: true

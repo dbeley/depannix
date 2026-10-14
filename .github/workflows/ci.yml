@@ -1,0 +1,156 @@
+name: build
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+    paths-ignore:
+      - "**.md"
+      - "docs/**"
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write # publier la release sur tag
+  id-token: write # attestation de provenance
+  attestations: write
+
+jobs:
+  build:
+    name: ${{ matrix.system }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            system: x86_64-linux
+            kvm: true
+          # Les runners arm64 gratuits n'exposent pas /dev/kvm (limitation du SKU
+          # Azure ARM, pas de l'image). On construit donc l'ISO aarch64 mais on
+          # ne la boote pas ici : le test aarch64 reste manuel. Voir docs/design.md.
+          - runner: ubuntu-24.04-arm
+            system: aarch64-linux
+            kvm: false
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Installer Nix
+        uses: DeterminateSystems/nix-installer-action@main
+
+      - name: Marge disque avant build
+        run: df -h /
+
+      - name: Activer KVM (x86_64 uniquement)
+        if: matrix.kvm
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq qemu-system-x86
+
+          # L'utilisateur du runner n'est pas dans le groupe kvm et on ne peut
+          # pas se reconnecter en cours de job : la règle udev est le seul
+          # contournement qui marche.
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+            | sudo tee /etc/udev/rules.d/99-kvm4all.rules >/dev/null
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+          # Échec immédiat si KVM n'est pas là : sans ce garde-fou, QEMU
+          # retombe silencieusement en émulation logicielle et le job expire.
+          test -w /dev/kvm
+
+      - name: Construire l'ISO
+        run: nix build .#minimal --out-link result-iso -L
+
+      - name: Taille de l'ISO
+        run: |
+          iso=$(find result-iso/iso -name '*.iso' | head -1)
+          ls -l "$iso"
+          printf 'taille : %s MiB\n' "$(( $(stat -c%s "$iso") / 1048576 ))"
+
+      - name: Test de boot (BIOS puis EFI)
+        if: matrix.kvm
+        run: |
+          nix build .#checks.${{ matrix.system }}.boot-test-bios --out-link result-boot-bios -L
+          nix build .#checks.${{ matrix.system }}.boot-test-efi --out-link result-boot-efi -L
+
+      - name: Garde-fou de taille
+        run: nix build .#checks.${{ matrix.system }}.size-budget --out-link result-budget -L
+
+      - name: Manifeste de composition
+        run: nix build .#packages.${{ matrix.system }}.closure-manifest --out-link result-manifest -L
+
+      - name: Attestation de provenance
+        if: github.event_name != 'pull_request'
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: result-iso/iso/*.iso
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: depannix-${{ matrix.system }}
+          path: |
+            result-iso/iso/*.iso
+            result-manifest/*
+          if-no-files-found: error
+
+  release:
+    name: release
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: depannix-*
+          path: dist
+          merge-multiple: true
+
+      - name: Empreintes
+        run: |
+          cd dist
+          sha256sum ./*.iso > SHA256SUMS
+          cat SHA256SUMS
+
+      # La signature reste optionnelle : le job ne doit pas échouer si le
+      # secret n'est pas configuré, mais on veut savoir si elle a eu lieu.
+      - name: Détecter la clé de signature
+        id: sig
+        env:
+          MINISIGN_KEY: ${{ secrets.MINISIGN_SECRET_KEY }}
+        run: |
+          if [ -n "$MINISIGN_KEY" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::MINISIGN_SECRET_KEY absent — release non signée"
+          fi
+
+      - name: Signer
+        if: steps.sig.outputs.enabled == 'true'
+        env:
+          MINISIGN_KEY: ${{ secrets.MINISIGN_SECRET_KEY }}
+          MINISIGN_PASSWORD: ${{ secrets.MINISIGN_PASSWORD }}
+        run: |
+          mkdir -p ~/.minisign
+          printf '%s\n' "$MINISIGN_KEY" > ~/.minisign/depannix.key
+          nix run nixpkgs#minisign -- -S -s ~/.minisign/depannix.key \
+            -m dist/SHA256SUMS
+          rm -f ~/.minisign/depannix.key
+
+      - name: Publier
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" \
+            --title "Dépannix ${GITHUB_REF_NAME}" \
+            --generate-notes \
+            dist/*.iso dist/SHA256SUMS dist/SHA256SUMS.minisig \
+            dist/store-paths.txt dist/closure.json dist/MANIFEST.sha256
