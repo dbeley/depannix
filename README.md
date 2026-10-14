@@ -4,9 +4,18 @@ Environnement de dépannage NixOS, construit en ISO minimale, reproductible et
 vérifiable. Un média qu'on peut étendre à la demande sans le reflasher, et dont
 on peut publier la composition exacte.
 
-**État : v0.1 — échafaudage.** Aucune release publiée. L'ISO n'a pas encore été
-construite de bout en bout : le budget annoncé dans `docs/budget.md` est mesuré,
-la taille finale ne l'est pas encore.
+**État : l'ISO se construit et démarre.** Construite de bout en bout, testée en
+BIOS et en EFI sous KVM, composition vérifiée contre `cache.nixos.org`. Aucune
+release publiée pour l'instant : la première sortira de la CI.
+
+| | |
+|---|---|
+| ISO | 1453,2 MiB (1,419 GiB) |
+| store embarqué | 732 chemins, 2467,7 MiB |
+| hachages confirmés par `cache.nixos.org` | 685 sur 732, zéro divergence |
+| dépôt | https://github.com/dbeley/depannix |
+
+La recette pour vérifier soi-même est plus bas dans ce fichier.
 
 ## Démarrage
 
@@ -78,16 +87,27 @@ Vérification, de la plus faible à la plus forte :
 # 1. l'ISO est intacte
 sha256sum -c SHA256SUMS
 
-# 2. sa composition correspond au manifeste publié
-nix path-info --json -r <chemin-du-système> | diff - closure.json
+# 2. sa composition est celle du manifeste publié — sans Nix, et sans accorder
+#    aucune confiance à celui qui a construit l'image : un simple GET par paquet
+awk '!/^#/ {print $1}' closure-sri.tsv | while read -r p; do
+  h=$(basename "$p")
+  curl -s "https://cache.nixos.org/${h%%-*}.narinfo" | sed -n 's/^NarHash: //p'
+done
+# puis comparer chaque valeur au champ narHash de closure.json
 
 # 3. on peut reconstruire le même système à l'identique
 git checkout <tag> && nix build .#minimal
 ```
 
-La reproductibilité bit-à-bit de l'ISO elle-même reste **à vérifier** : un
-deuxième build identique doit produire le même hachage. C'est un objectif, pas
-une affirmation tant qu'il n'a pas été mesuré.
+Mesure sur l'image 2026.10 : **685 des 732 chemins** sont confirmés à l'identique
+par `cache.nixos.org`, **zéro divergence**. Les 47 autres sont dérivés localement
+(le système NixOS lui-même, les `/etc` générés, les unités systemd) : ils
+n'existent dans aucun cache binaire, et pour eux seule la reconstruction fait foi.
+
+La reproductibilité bit-à-bit de l'ISO n'est **pas affirmée** : deux constructions
+identiques doivent produire le même hachage, ce n'est pas encore mesuré. Première
+indication favorable : deux constructions successives du manifeste ont donné les
+mêmes empreintes (`closure.json` → `79fb15ce…`, `store-paths.txt` → `c3fd0045…`).
 
 ## Limites connues
 
@@ -109,9 +129,12 @@ une affirmation tant qu'il n'a pas été mesuré.
 
 ## Feuille de route
 
-- **v0.1** — échafaudage, saveur minimale, test de boot, manifeste de composition.
-- **v0.2** — premier build réel, chiffre de taille définitif, CI verte sur les
-  deux architectures, release signée.
+- **v0.1 — fait.** Saveur minimale, ISO construite de bout en bout, démarrage
+  testé en BIOS et en EFI, manifeste de composition vérifié, garde-fous de taille
+  et de boot en CI.
+- **v0.2 — en cours.** Il reste la release signée (clé minisign à créer, non
+  chiffrée : minisign ne lit pas de mot de passe dans l'environnement) et le test
+  de démarrage `aarch64`, à faire à la main.
 - **v0.3** — release mensuelle automatique, budget de taille et test de boot
   bloquants.
 - **v1.0** — documentation de vérification complète.
