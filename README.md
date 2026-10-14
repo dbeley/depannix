@@ -13,6 +13,8 @@ release publiée pour l'instant : la première sortira de la CI.
 | ISO | 1453,2 MiB (1,419 GiB) |
 | store embarqué | 732 chemins, 2467,7 MiB |
 | hachages confirmés par `cache.nixos.org` | 685 sur 732, zéro divergence |
+| reproductibilité | bit-à-bit, vérifiée sur deux machines distinctes |
+| CI | verte, x86_64 et aarch64 (boot testé en x86_64) |
 | dépôt | https://github.com/dbeley/depannix |
 
 La recette pour vérifier soi-même est plus bas dans ce fichier.
@@ -104,10 +106,15 @@ par `cache.nixos.org`, **zéro divergence**. Les 47 autres sont dérivés locale
 (le système NixOS lui-même, les `/etc` générés, les unités systemd) : ils
 n'existent dans aucun cache binaire, et pour eux seule la reconstruction fait foi.
 
-La reproductibilité bit-à-bit de l'ISO n'est **pas affirmée** : deux constructions
-identiques doivent produire le même hachage, ce n'est pas encore mesuré. Première
-indication favorable : deux constructions successives du manifeste ont donné les
-mêmes empreintes (`closure.json` → `79fb15ce…`, `store-paths.txt` → `c3fd0045…`).
+La reproductibilité bit-à-bit de l'ISO est **établie**, et c'est le résultat le
+plus important du projet. La même révision, construite sur le runner GitHub
+(4 vCPU, store téléchargé intégralement) et sur une machine NixOS (2 vCPU, store
+déjà peuplé), produit le **même hachage** `943614f5…d4728a` et le **même nombre de
+secteurs** (744 016). Deux environnements distincts, un seul artefact : un tiers
+peut donc reconstruire l'image et la comparer à la nôtre.
+
+Deux constructions successives du manifeste ont de même donné les mêmes
+empreintes (`closure.json` → `79fb15ce…`, `store-paths.txt` → `c3fd0045…`).
 
 ## Limites connues
 
@@ -132,9 +139,10 @@ mêmes empreintes (`closure.json` → `79fb15ce…`, `store-paths.txt` → `c3fd
 - **v0.1 — fait.** Saveur minimale, ISO construite de bout en bout, démarrage
   testé en BIOS et en EFI, manifeste de composition vérifié, garde-fous de taille
   et de boot en CI.
-- **v0.2 — en cours.** Il reste la release signée (clé minisign à créer, non
-  chiffrée : minisign ne lit pas de mot de passe dans l'environnement) et le test
-  de démarrage `aarch64`, à faire à la main.
+- **v0.2 — en cours.** La CI est verte sur les deux architectures et l'ISO se
+  reconstruit à l'identique sur une autre machine. Il reste la release signée
+  (clé minisign à créer, non chiffrée : minisign ne lit pas de mot de passe dans
+  l'environnement) et le test de démarrage `aarch64`, à faire à la main.
 - **v0.3** — release mensuelle automatique, budget de taille et test de boot
   bloquants.
 - **v1.0** — documentation de vérification complète.

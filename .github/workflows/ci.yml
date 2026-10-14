@@ -27,7 +27,11 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - runner: ubuntu-latest
+          # Épinglé, comme les actions et nixpkgs. `ubuntu-latest` bascule vers
+          # Ubuntu 26 le 19/10/2026 : laissé flottant, la chaîne de build
+          # changerait toute seule un jour ouvré sans que personne ne l'ait
+          # décidé. Aligné sur le runner arm64, lui aussi épinglé.
+          - runner: ubuntu-24.04
             system: x86_64-linux
             kvm: true
           # Les runners arm64 gratuits n'exposent pas /dev/kvm (limitation du SKU
@@ -45,6 +49,12 @@ jobs:
       # sans trace. v22 est la dernière au moment de l'écriture.
       - name: Installer Nix
         uses: DeterminateSystems/nix-installer-action@v22
+        with:
+          # Par défaut l'action tente de se connecter à FlakeHub, échoue faute
+          # de jeton, et laisse un avertissement rouge à chaque run. Le projet
+          # n'utilise pas FlakeHub : on le désactive pour que le seul bruit
+          # restant dans les journaux soit un vrai signal.
+          flakehub: false
 
       - name: Marge disque avant build
         run: df -h /
@@ -94,11 +104,11 @@ jobs:
 
       - name: Attestation de provenance
         if: github.event_name != 'pull_request'
-        uses: actions/attest-build-provenance@v2
+        uses: actions/attest-build-provenance@v4
         with:
           subject-path: result-iso/iso/*.iso
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: depannix-${{ matrix.system }}
           path: |
@@ -110,11 +120,11 @@ jobs:
     name: release
     needs: build
     if: startsWith(github.ref, 'refs/tags/v')
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           pattern: depannix-*
           path: dist
@@ -145,6 +155,8 @@ jobs:
       - name: Installer Nix (pour minisign)
         if: steps.sig.outputs.enabled == 'true'
         uses: DeterminateSystems/nix-installer-action@v22
+        with:
+          flakehub: false
 
       # minisign ne lit le mot de passe ni dans l'environnement ni sur stdin :
       # il le demande au terminal, absent en CI. La clé stockée dans le secret

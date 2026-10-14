@@ -172,6 +172,37 @@ Leçon générale : quand une option ne produit pas l'effet attendu dans un
 assemblage, lire l'artefact final plutôt que la source. Un `grep` sur l'ISO a
 tranché en une commande ce que la lecture des modules nixpkgs n'avait pas donné.
 
+## Reproductibilité : mesurée, pas supposée
+
+La promesse du projet tient à ceci : un tiers doit pouvoir reconstruire l'image et
+obtenir exactement la même. C'est mesuré, sur deux environnements volontairement
+dissemblables.
+
+| | Machine de développement | Runner GitHub |
+|---|---|---|
+| cœurs | 2 vCPU | 4 vCPU |
+| store | déjà peuplé | téléchargé intégralement |
+| révision nixpkgs | `7fd4004d` (`flake.lock`) | idem |
+| secteurs de l'ISO | 744 016 | 744 016 |
+| sha256 | `943614f5…d4728a` | `943614f5…d4728a` |
+
+Même hachage des deux côtés. Trois remarques sur ce qui le rend possible, dont
+une seule est réellement vérifiée :
+
+- `flake.lock` versionné, donc la même révision de nixpkgs des deux côtés
+  (vérifié : c'est bien la même).
+- `SOURCE_DATE_EPOCH` figé dans la recette — c'est le levier standard, mais je
+  n'ai pas disséqué la chaîne `mksquashfs`/`xorriso` de nixpkgs pour confirmer
+  que c'est bien lui qui neutralise les horodatages. À ne pas présenter comme
+  établi.
+- Deux machines ne font pas une loi. Le résultat est solide parce que les
+  environnements diffèrent sur plusieurs axes à la fois (store vide contre
+  peuplé, 4 contre 2 cœurs), pas parce qu'il a été répété cent fois.
+
+La conséquence pratique est nette : l'attestation de provenance produite par la CI
+désigne le même objet que le build local. Ce ne sont pas deux artefacts
+« équivalents » — c'est un seul artefact, produit deux fois.
+
 ## Points ouverts
 
 - `boot.zfs.forceImportRoot` : par défaut, le système live peut importer les pools
@@ -183,7 +214,7 @@ tranché en une commande ce que la lecture des modules nixpkgs n'avait pas donn�
   et **pas** sur la série, donc invisible dans le journal de la CI. À trancher :
   accepter un journal série bavard mais sans shell de secours, ou inverser
   l'ordre pour la machine sans écran.
-- Reproductibilité bit-à-bit de l'ISO : à mesurer, pas à supposer.
+- Reproductibilité bit-à-bit : **tranchée**, voir la section ci-dessus.
 - `isoImage.forceTextMode` et les entrées de boot additionnelles (`copytoram`,
   mode forensic) ne sont pas encore câblées.
 - Test de boot aarch64 : manuel, faute de `/dev/kvm` sur les runners ARM.
