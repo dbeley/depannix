@@ -105,6 +105,15 @@ in
     documentation.doc.enable = mkForce false;
 
     # ── Noyau ────────────────────────────────────────────────────────────────
+    # Niveau de journalisation de la console. Piège d'ordre : nixpkgs ajoute
+    # `loglevel=` APRÈS les kernelParams, donc écrire « loglevel=7 » dans
+    # boot.kernelParams ne sert à rien — le défaut (4) gagne et la console série
+    # reste muette, ce qui rend un échec de démarrage indiagnosticable en CI.
+    # Vérifié sur la ligne de commande gravée dans l'ISO :
+    #   init=… console=ttyS0,115200 console=tty1 boot.shell_on_fail
+    #   nohibernate root=fstab loglevel=4 lsm=landlock,yama,bpf
+    boot.consoleLogLevel = 7;
+
     # boot.kernelParams alimente bien les entrées de boot de l'ISO
     # (iso-image.nix : `params = "init=… ${toString cfg.boot.kernelParams}"`).
     boot.kernelParams = [
@@ -130,8 +139,17 @@ in
 
     # Avec ZFS dans l'image, le noyau doit être celui contre lequel le module
     # ZFS a été construit — sinon la compilation du module échoue ou le pool
-    # n'est pas montable. C'est l'astuce la plus utile récupérée de n8henrie.
-    boot.kernelPackages = mkIf cfg.enableZfs config.boot.zfs.package.latestCompatibleLinuxPackages;
+    # n'est pas montable.
+    #
+    # On épingle une LTS explicite, et NON
+    # `config.boot.zfs.package.latestCompatibleLinuxPackages` : cette dernière
+    # est dépréciée et pointe désormais sur le noyau par défaut, donc elle ne
+    # garantit plus rien tout en en donnant l'illusion (constaté : noyau par
+    # défaut = 6.18.55 = linuxPackages_6_18). Avec un flake qui bump tous les
+    # mois, la dérive serait silencieuse jusqu'au jour où le module ZFS ne se
+    # compilerait plus. Une LTS explicite en fin de vie fait échouer
+    # l'évaluation : bruyant, donc réparable.
+    boot.kernelPackages = mkIf cfg.enableZfs pkgs.linuxPackages_6_18;
 
     # ── Licences ─────────────────────────────────────────────────────────────
     # Implicite (défaut) mais on l'écrit, parce que c'est une règle du projet :

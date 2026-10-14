@@ -65,7 +65,9 @@
         in
         pkgs.writeShellScriptBin "depannix-vm" ''
           set -euo pipefail
-          export ISO="$(find ${iso}/iso -name '*.iso' | head -1)"
+          # ISO= déjà fourni par l'appelant (ex. une release à tester) : on ne
+          # l'écrase pas, sinon il est impossible de tester un ISO donné.
+          export ISO="''${ISO:-$(find ${iso}/iso -name '*.iso' | head -1)}"
           export QEMU="${env.QEMU}"
           export MACHINE="${env.MACHINE}"
           export OVMF_FIRMWARE="${env.OVMF_FIRMWARE}"
@@ -124,8 +126,8 @@
           iso="$(find ${iso}/iso -name '*.iso' | head -1)"
           size=$(stat -c%s "$iso")
           budget=$((1800 * 1024 * 1024))
-          printf 'taille=%s octets (%.0f MiB), budget=%s octets (%s MiB)\n' \
-            "$size" "$(echo "$size/1048576" | bc -l)" "$budget" "$((budget/1048576))"
+          printf 'taille=%s octets (%s MiB), budget=%s octets (%s MiB)\n' \
+            "$size" "$((size / 1048576))" "$budget" "$((budget / 1048576))"
           if [ "$size" -gt "$budget" ]; then
             echo "ÉCHEC : l'ISO dépasse le budget de taille." >&2
             echo "Voir docs/budget.md — ajouter un outil sans mesurer sa closure est la cause habituelle." >&2

@@ -13,8 +13,9 @@ la liste est figée à la gravure. C'est ça qui vieillit mal. Avec NixOS :
 - la mise à jour mensuelle est un `flake.lock` qui bouge, pas une reconstruction
   à la main.
 
-Contrepartie acceptée : une ISO de ~1,3-1,5 GiB contre 1,29 GiB pour SystemRescue,
-et l'obligation de désactiver Secure Boot.
+Contrepartie acceptée : une ISO de 1,42 GiB contre 1,29 GiB pour SystemRescue
+(chiffres mesurés, voir `docs/budget.md`), et l'obligation de désactiver Secure
+Boot.
 
 ## Pourquoi la copie de nixpkgs reste dans l'ISO
 
@@ -30,8 +31,17 @@ qui suppose une machine saine est un contresens.
 firmware sous licence non redistribuable. On le force à `false` et on active
 `enableRedistributableFirmware`. C'est le socle de la règle n°2 : on publie la
 composition de l'image, donc tout ce qu'elle contient doit être redistribuable.
-Coût : 1884 MiB de store, 70 % du socle. Le firmware est **le** poste de dépense,
-pas les outils.
+
+Coût, **mesuré sur le manifeste de l'image réelle** et non sur une maquette : la
+closure fait 732 chemins pour 2467,7 MiB, dont 836,0 MiB de firmware, soit 34 %.
+Le plus gros poste isolé est `linux-firmware-20260916-zstd` à 809,5 MiB.
+
+Correction de méthode au passage : le chiffre de 1884 MiB qui figurait ici venait
+du paquet `linux-firmware` **monolithique**, alors que l'image embarque la variante
+`-zstd`, nettement plus légère — et il ignorait les 546 autres chemins du système
+(systemd, outils Nix, pile Perl, Python, git). Le firmware reste le premier poste
+de dépense, mais à 34 % du total et non 70 % : c'est la hiérarchie des priorités
+qui était fausse, pas seulement le montant.
 
 ## Pourquoi pas d'interface graphique en v1
 
@@ -59,8 +69,9 @@ Le projet est inactif depuis trois ans, mais deux choses valent la reprise :
   `console=ttyS0` — c'est ce dernier qui rend le test de boot automatisé possible.
   Son `memorySize = 2048` est trop juste pour une ISO de ~1,4 GiB avec
   `copytoram` : passé à 3072.
-- **`boot.kernelPackages = zfs.latestCompatibleLinuxPackages`** : garantit que le
-  module ZFS colle au noyau. Utile dès qu'on embarque ZFS.
+- **L'intention de `boot.kernelPackages = zfs.latestCompatibleLinuxPackages`** :
+  faire coller le module ZFS et le noyau. L'intention est juste, l'expression ne
+  l'est plus — voir « La décision ZFS / noyau ».
 - **`boot.supportedFilesystems` étendu** : on ajoute `bcachefs`, `f2fs`,
   `nilfs2`, `jfs`.
 
@@ -80,12 +91,30 @@ Jeté :
 
 ## La décision ZFS / noyau
 
-Embarquer ZFS impose `zfs.latestCompatibleLinuxPackages`, donc un noyau LTS
-plutôt que le tout dernier. C'est un arbitrage contre le support du matériel le
-plus récent. Il est assumé : ZFS est un différenciateur réel face à SystemRescue,
-qui l'exclut pour raisons de licence, et le module NixOS en est un utilisateur
-naturel. Pour la machine neuve au matériel inconnu, `nomodeset` et le firmware
-complet couvrent l'essentiel.
+Embarquer ZFS impose un noyau contre lequel le module ZFS est construit, donc un
+noyau LTS plutôt que le tout dernier. C'est un arbitrage contre le support du
+matériel le plus récent. Il est assumé : ZFS est un différenciateur réel face à
+SystemRescue, qui l'exclut pour raisons de licence, et le module NixOS en est un
+utilisateur naturel. Pour la machine neuve au matériel inconnu, `nomodeset` et le
+firmware complet couvrent l'essentiel.
+
+**Ce que la construction a révélé.** L'expression héritée est dépréciée. nixpkgs
+émet désormais :
+
+> `zfs.latestCompatibleLinuxPackages is deprecated and is now pointing at the`
+> `default kernel.`
+
+Mesuré : le noyau par défaut *est* 6.18.55, soit exactement
+`linuxPackages_6_18`. Autrement dit, l'expression produisait le même résultat que
+« ne rien écrire », tout en donnant l'illusion d'une garantie. Avec un
+`flake.lock` qui bouge tous les mois, la dérive aurait été silencieuse jusqu'au
+jour où le module ZFS cesse de compiler.
+
+On épingle donc explicitement `pkgs.linuxPackages_6_18`. Une LTS en fin de vie
+fait échouer l'évaluation — bruyant, donc réparable — au lieu de dériver sans
+rien dire. C'est l'inverse du choix fait partout ailleurs dans le projet, où l'on
+suit `nixos-unstable` : ici, suivre le défaut n'est pas neutre, c'est précisément
+perdre la propriété qu'on cherchait.
 
 ## Contraintes CI, vérifiées
 
@@ -101,6 +130,20 @@ Le workflow échoue explicitement si `/dev/kvm` est absent : sans ce garde-fou,
 QEMU retombe silencieusement en émulation logicielle et le job expire au lieu
 d'échouer.
 
+**Piège découvert à l'exécution, un cran plus bas.** Ce garde-fou ne suffisait
+pas. Le test de boot est un `nix build`, donc il s'exécute dans le **bac à sable
+Nix**, qui n'expose pas `/dev/kvm` aux constructions. Le runner avait beau
+l'activer, le QEMU du test ne le voyait pas et retombait en émulation — soit
+exactement la panne que le garde-fou prétendait empêcher, mais placée sous lui.
+Il faut injecter le périphérique dans le bac à sable :
+
+```bash
+nix build --option extra-sandbox-paths /dev/kvm .#checks.<system>.boot-test-bios
+```
+
+Vérifié : le journal de construction affiche `[qemu] KVM actif` **dans** le bac à
+sable.
+
 ## Le marqueur de boot
 
 Le test de boot ne peut pas se contenter de « QEMU a démarré ». Une unité systemd
@@ -109,14 +152,38 @@ Le test de boot ne peut pas se contenter de « QEMU a démarré ». Une unité s
 de commande. C'est aussi la manière la plus simple de prouver que le système est
 réellement arrivé au multi-utilisateur.
 
+## La console série, et pourquoi elle était muette
+
+Diagnostic instructif. Le marqueur apparaissait bien, mais `serial.log` ne
+contenait que 20 lignes : un échec de démarrage aurait donc été indiagnosticable
+en CI. La cause n'était ni `quiet`, ni un `console=` manquant. C'est la ligne de
+commande **réellement gravée dans l'ISO** qui l'a dit :
+
+```
+init=… console=ttyS0,115200 console=tty1 boot.shell_on_fail nohibernate root=fstab loglevel=4 lsm=landlock,yama,bpf
+```
+
+`loglevel=4` est ajouté par nixpkgs **après** les `boot.kernelParams`. Écrire
+`loglevel=7` dans `boot.kernelParams` n'aurait donc rien changé : la valeur
+ajoutée en dernier l'emporte. Le levier correct est l'option dédiée
+`boot.consoleLogLevel`, insérée à la bonne place.
+
+Leçon générale : quand une option ne produit pas l'effet attendu dans un
+assemblage, lire l'artefact final plutôt que la source. Un `grep` sur l'ISO a
+tranché en une commande ce que la lecture des modules nixpkgs n'avait pas donné.
+
 ## Points ouverts
 
 - `boot.zfs.forceImportRoot` : par défaut, le système live peut importer les pools
   ZFS de la machine dépannée. Sur un média de récupération, un import automatique
   en écriture mérite d'être examiné de près.
-- Ordre `console=ttyS0` puis `console=tty1` : sur une machine sans écran, à
-  vérifier ; sur une machine avec écran, le message du marqueur doit rester
-  discret.
+- Ordre `console=ttyS0` puis `console=tty1` : mesuré, le **dernier** `console=`
+  emporte `/dev/console`, donc il pointe sur `tty1` (l'écran). Conséquence : en
+  cas d'échec, le shell de secours de `boot.shell_on_fail` s'affiche sur l'écran
+  et **pas** sur la série, donc invisible dans le journal de la CI. À trancher :
+  accepter un journal série bavard mais sans shell de secours, ou inverser
+  l'ordre pour la machine sans écran.
 - Reproductibilité bit-à-bit de l'ISO : à mesurer, pas à supposer.
 - `isoImage.forceTextMode` et les entrées de boot additionnelles (`copytoram`,
   mode forensic) ne sont pas encore câblées.
+- Test de boot aarch64 : manuel, faute de `/dev/kvm` sur les runners ARM.

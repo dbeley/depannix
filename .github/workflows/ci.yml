@@ -40,8 +40,11 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      # Version épinglée volontairement : `@main` peut changer sans prévenir,
+      # donc casser un build qui marchait, ou déplacer la chaîne de confiance
+      # sans trace. v22 est la dernière au moment de l'écriture.
       - name: Installer Nix
-        uses: DeterminateSystems/nix-installer-action@main
+        uses: DeterminateSystems/nix-installer-action@v22
 
       - name: Marge disque avant build
         run: df -h /
@@ -76,8 +79,12 @@ jobs:
       - name: Test de boot (BIOS puis EFI)
         if: matrix.kvm
         run: |
-          nix build .#checks.${{ matrix.system }}.boot-test-bios --out-link result-boot-bios -L
-          nix build .#checks.${{ matrix.system }}.boot-test-efi --out-link result-boot-efi -L
+          # /dev/kvm doit être injecté dans le bac à sable : sans ça QEMU
+          # retombe en émulation logicielle et le job expire. Le seul fait
+          # d'activer KVM sur le runner ne suffit pas, parce qu'un `nix build`
+          # s'exécute dans un bac à sable qui n'expose pas /dev/kvm.
+          nix build --option extra-sandbox-paths /dev/kvm .#checks.${{ matrix.system }}.boot-test-bios --out-link result-boot-bios -L
+          nix build --option extra-sandbox-paths /dev/kvm .#checks.${{ matrix.system }}.boot-test-efi --out-link result-boot-efi -L
 
       - name: Garde-fou de taille
         run: nix build .#checks.${{ matrix.system }}.size-budget --out-link result-budget -L
@@ -133,24 +140,45 @@ jobs:
             echo "::warning::MINISIGN_SECRET_KEY absent — release non signée"
           fi
 
+      # Le job `release` ne partage pas l'environnement du job `build` : sans
+      # cette étape, `nix` n'existe pas ici et la signature échoue.
+      - name: Installer Nix (pour minisign)
+        if: steps.sig.outputs.enabled == 'true'
+        uses: DeterminateSystems/nix-installer-action@v22
+
+      # minisign ne lit le mot de passe ni dans l'environnement ni sur stdin :
+      # il le demande au terminal, absent en CI. La clé stockée dans le secret
+      # doit donc être NON chiffrée (`minisign -G -W`), sinon cette étape
+      # échoue. C'est le seul mode non interactif supporté en amont.
       - name: Signer
         if: steps.sig.outputs.enabled == 'true'
-        env:
-          MINISIGN_KEY: ${{ secrets.MINISIGN_SECRET_KEY }}
-          MINISIGN_PASSWORD: ${{ secrets.MINISIGN_PASSWORD }}
         run: |
           mkdir -p ~/.minisign
           printf '%s\n' "$MINISIGN_KEY" > ~/.minisign/depannix.key
           nix run nixpkgs#minisign -- -S -s ~/.minisign/depannix.key \
             -m dist/SHA256SUMS
           rm -f ~/.minisign/depannix.key
+        env:
+          MINISIGN_KEY: ${{ secrets.MINISIGN_SECRET_KEY }}
 
       - name: Publier
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          # La signature est optionnelle : lister inconditionnellement
+          # SHA256SUMS.minisig ferait échouer toute release non signée, alors
+          # que c'est le cas par défaut.
+          files=(
+            dist/*.iso
+            dist/SHA256SUMS
+            dist/store-paths.txt
+            dist/closure.json
+            dist/MANIFEST.sha256
+          )
+          if [ -f dist/SHA256SUMS.minisig ]; then
+            files+=(dist/SHA256SUMS.minisig)
+          fi
           gh release create "${GITHUB_REF_NAME}" \
             --title "Dépannix ${GITHUB_REF_NAME}" \
             --generate-notes \
-            dist/*.iso dist/SHA256SUMS dist/SHA256SUMS.minisig \
-            dist/store-paths.txt dist/closure.json dist/MANIFEST.sha256
+            "${files[@]}"
