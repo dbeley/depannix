@@ -14,7 +14,7 @@
 #                TIMEOUT secondes s'écoulent sans la voir.
 set -uo pipefail
 
-ISO="${ISO:?la variable ISO doit pointer sur l'ISO à démarrer}"
+ISO="${ISO:?la variable ISO doit pointer sur une image a demarrer}"
 MODE="${MODE:-bios}"
 MACHINE="${MACHINE:-q35}"
 MEM="${MEM:-3072}"
