@@ -1,11 +1,11 @@
-# Sorties de build
+# Build outputs
 result
 result-*
 /serial.log
 
-# Environnement local
+# Local environment
 .direnv/
 .envrc
 
-# Le flake.lock est volontairement versionné : c'est lui qui rend la
-# composition de l'ISO reproductible et vérifiable.
+# flake.lock is deliberately committed: it is what makes the ISO composition
+# reproducible and verifiable.

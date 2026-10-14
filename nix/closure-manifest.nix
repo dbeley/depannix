@@ -1,34 +1,33 @@
-# Manifeste de composition de l'ISO.
+# ISO composition manifest.
 #
-# Publie la liste exhaustive des chemins du store embarqués, avec leur hachage.
-# C'est la pièce qui rend la promesse « je peux prouver le contenu » vérifiable :
-# n'importe qui peut comparer ce manifeste avec son propre store, ou avec
-# cache.nixos.org, sans faire confiance à l'auteur du build.
+# Publishes the exhaustive list of store paths baked into the image, with their
+# hash. This is the piece that makes the promise "you can prove the contents"
+# verifiable: anyone can compare this manifest against their own store, or
+# against cache.nixos.org, without trusting whoever ran the build.
 #
-# Source des données : Nix lui-même. `exportReferencesGraph` injecte le graphe
-# complet sous forme JSON dans `$NIX_ATTRS_JSON_FILE` au moment de
-# l'instanciation. On n'appelle donc PAS `nix path-info` : celui-ci exige
-# l'accès à la base du store, que le bac à sable refuse (« Permission denied »
-# sur /nix/var/nix/profiles). C'est la méthode qu'emploie `closureInfo` dans
-# nixpkgs, et la seule qui fonctionne en CI.
+# Data source: Nix itself. `exportReferencesGraph` injects the complete graph as
+# JSON into `$NIX_ATTRS_JSON_FILE` at instantiation time. We therefore do NOT
+# call `nix path-info`: that one requires access to the store database, which
+# the sandbox refuses ("Permission denied" on /nix/var/nix/profiles). This is
+# the method `closureInfo` uses in nixpkgs, and the only one that works in CI.
 { pkgs, toplevel }:
 
 let
-  # Les filtres jq et le texte explicatif vivent dans des fichiers séparés
-  # plutôt qu'en ligne : dans une chaîne Nix `''`, chaque apostrophe devrait
-  # s'écrire `'''`, ce qui rend l'expression illisible et fragile.
-  filtreJson = pkgs.writeText "depannix-closure.jq" ''
+  # The jq filters and the explanatory text live in separate files rather than
+  # inline: inside a Nix `''` string every apostrophe would have to be written
+  # `'''`, which makes the expression unreadable and fragile.
+  jsonFilter = pkgs.writeText "depannix-closure.jq" ''
     .depannix
     | map({path, narHash, narSize, references})
     | sort_by(.path)
   '';
 
-  filtreChemins = pkgs.writeText "depannix-paths.jq" ''
+  pathsFilter = pkgs.writeText "depannix-paths.jq" ''
     .depannix[].path
   '';
 
-  # Format exact attendu par `nix-store --load-db`.
-  filtreEnregistrement = pkgs.writeText "depannix-registration.jq" ''
+  # Exact format expected by `nix-store --load-db`.
+  registrationFilter = pkgs.writeText "depannix-registration.jq" ''
     .depannix
     | map([.path, .narHash, .narSize, "", (.references | length)] + .references)
     | add
@@ -36,26 +35,25 @@ let
     | add
   '';
 
-  filtreTaille = pkgs.writeText "depannix-total.jq" ''
+  sizeFilter = pkgs.writeText "depannix-total.jq" ''
     .depannix | map(.narSize) | add
   '';
 
-  explication = pkgs.writeText "depannix-lisezmoi.txt" ''
-    Vérifier ce manifeste sans faire confiance à son auteur
-    =======================================================
+  readme = pkgs.writeText "depannix-readme.txt" ''
+    Verifying this manifest without trusting its author
+    ===================================================
 
-    1. Les hachages sont fournis dans deux encodages, pour qu'aucune
-       conversion ne soit nécessaire :
+    1. Hashes are provided in two encodings, so that no conversion is needed:
 
-         - `closure.json` → `.narHash`, en base32 de Nix (`sha256:…`) ;
-         - `closure-sri.tsv` → colonne 2, en SRI/base64 (`sha256-…=`), qui est
-           le format renvoyé par les outils Nix modernes et par les narinfos.
+         - `closure.json` → `.narHash`, in Nix base32 (`sha256:…`);
+         - `closure-sri.tsv` → column 2, in SRI/base64 (`sha256-…=`), the
+           format returned by modern Nix tooling and by narinfo files.
 
-       Les deux désignent la même valeur. Le premier format est comparable
-       littéralement à un narinfo, le second à la sortie de `nix path-info`.
+       Both denote the same value. The first is literally comparable to a
+       narinfo, the second to the output of `nix path-info`.
 
-    2. Vérifier les paquets venus de nixpkgs, sans Nix et sans rien
-       reconstruire — un simple GET, aucune confiance requise :
+    2. Verify the packages that came from nixpkgs, without Nix and without
+       rebuilding anything — a plain GET, no trust required:
 
          awk '!/^#/ {print $1}' closure-sri.tsv | while read -r p; do
            h=$(basename "$p")
@@ -63,31 +61,31 @@ let
              | sed -n 's/^NarHash: //p'
          done
 
-       Comparer chaque valeur au `narHash` correspondant de closure.json.
+       Compare each value against the matching `narHash` in closure.json.
 
-       Couverture mesurée sur cette image : 685 chemins sur 732. Les 47 autres
-       sont des chemins dérivés localement (le système NixOS lui-même, les
-       fichiers /etc générés, les unités systemd) : ils n'existent dans aucun
-       cache binaire et aucun outil ne pourra les confirmer.
+       Coverage measured on this image: 685 paths out of 732. The other 47 are
+       locally derived paths (the NixOS system itself, generated /etc files,
+       systemd units): they exist in no binary cache, and no tool can confirm
+       them.
 
-    3. Pour ces 47 chemins, seule la reconstruction fait foi. Reconstruire
-       l'image depuis les mêmes sources doit reproduire le même
-       MANIFEST.sha256 à l'octet près.
+    3. For those 47 paths, only rebuilding is authoritative. Rebuilding the
+       image from the same sources must reproduce the same MANIFEST.sha256, to
+       the byte.
 
-    4. Reconstruire la base du store local puis vérifier chaque hachage :
+    4. Rebuild the local store database, then verify every hash:
 
          nix-store --load-db < nix-path-registration.txt
 
-    5. Contrôler l'intégrité du manifeste lui-même :
+    5. Check the integrity of the manifest itself:
 
          sha256sum -c MANIFEST.sha256
 
-    `total-nar-size.txt` donne le poids total de la closure en octets.
+    `total-nar-size.txt` gives the total weight of the closure in bytes.
   '';
 in
 pkgs.runCommand "depannix-closure-manifest"
   {
-    # Obligatoire pour que `$NIX_ATTRS_JSON_FILE` existe.
+    # Required for `$NIX_ATTRS_JSON_FILE` to exist.
     __structuredAttrs = true;
     exportReferencesGraph.depannix = [ toplevel ];
     nativeBuildInputs = [ pkgs.jq pkgs.coreutils pkgs.nix ];
@@ -97,45 +95,45 @@ pkgs.runCommand "depannix-closure-manifest"
     mkdir -p $out
     attrs="$NIX_ATTRS_JSON_FILE"
 
-    # Manifeste détaillé et stable : chemin, narHash, taille, références.
-    # `-S` trie les clés, le filtre trie les entrées par chemin : deux
-    # constructions du même système produisent donc le même octet.
-    jq -S -f ${filtreJson} < "$attrs" > $out/closure.json
+    # Detailed, stable manifest: path, narHash, size, references.
+    # `-S` sorts the keys and the filter sorts entries by path, so two builds of
+    # the same system produce the same bytes.
+    jq -S -f ${jsonFilter} < "$attrs" > $out/closure.json
 
-    # Liste nue des chemins, pour les comparaisons en une ligne de commande.
-    jq -r -f ${filtreChemins} < "$attrs" | sort > $out/store-paths.txt
+    # Bare path list, for one-liner comparisons.
+    jq -r -f ${pathsFilter} < "$attrs" | sort > $out/store-paths.txt
 
-    # Forme SRI, directement comparable avec un narinfo de cache.nixos.org :
-    # `nix hash convert` est un calcul pur, il ne touche pas la base du store
-    # et passe donc le bac à sable.
+    # SRI form, directly comparable with a narinfo from cache.nixos.org:
+    # `nix hash convert` is a pure computation, it does not touch the store
+    # database and therefore passes the sandbox.
     {
-      printf '# chemin\tnarHash (SRI)\tnarSize\n'
+      printf '# path\tnarHash (SRI)\tnarSize\n'
       paste \
-        <(jq -r -f ${filtreChemins} < "$attrs") \
+        <(jq -r -f ${pathsFilter} < "$attrs") \
         <(jq -r '.depannix[].narHash' < "$attrs" \
           | xargs nix --extra-experimental-features nix-command \
                   hash convert --from nix32 --to sri) \
         <(jq -r '.depannix[].narSize' < "$attrs")
     } > $out/closure-sri.tsv
 
-    # Enregistrement au format `nix-store --load-db` : permet à un tiers de
-    # reconstruire la base du store et de vérifier chaque hachage localement.
-    jq -r -f ${filtreEnregistrement} < "$attrs" | head -n -1 \
+    # Registration in `nix-store --load-db` format: lets a third party rebuild
+    # the store database and verify every hash locally.
+    jq -r -f ${registrationFilter} < "$attrs" | head -n -1 \
       > $out/nix-path-registration.txt
 
-    # Poids total de la closure, en octets.
-    jq -f ${filtreTaille} < "$attrs" > $out/total-nar-size.txt
+    # Total weight of the closure, in bytes.
+    jq -f ${sizeFilter} < "$attrs" > $out/total-nar-size.txt
 
-    cp ${explication} $out/LISEZMOI.txt
+    cp ${readme} $out/README.txt
 
-    # Empreinte du manifeste lui-même : la valeur à épingler dans une release,
-    # et celle qu'un tiers compare après avoir reconstruit l'image.
+    # Fingerprint of the manifest itself: the value to pin in a release, and the
+    # one a third party compares after rebuilding the image.
     sha256sum $out/closure.json $out/store-paths.txt $out/closure-sri.tsv \
       > $out/MANIFEST.sha256
 
-    echo "système    : ${toplevel}"
-    echo "chemins    : $(wc -l < $out/store-paths.txt)"
-    echo "taille NAR : $(cat $out/total-nar-size.txt) octets"
-    echo "manifeste  :"
+    echo "system  : ${toplevel}"
+    echo "paths   : $(wc -l < $out/store-paths.txt)"
+    echo "NAR size: $(cat $out/total-nar-size.txt) bytes"
+    echo "manifest:"
     cat $out/MANIFEST.sha256
   ''

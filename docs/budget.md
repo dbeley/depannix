@@ -1,75 +1,74 @@
-# Budget de taille
+# Size budget
 
-Tous les chiffres de ce document sont **mesurés**, pas estimés.
+Every figure in this document is **measured**, not estimated.
 
-Deux sources, et elles ne se remplacent pas :
+Two sources, and they do not replace one another:
 
-| Source | Ce qu'elle mesure | Usage |
+| Source | What it measures | Use |
 |---|---|---|
-| Le manifeste de l'ISO (`nix build .#closure-manifest`) | La closure **réelle** du système construit : 732 chemins, hachages compris | **Le budget.** C'est la seule valeur qui décrit l'artefact |
-| `nix path-info --store https://cache.nixos.org` sur un paquet isolé | La closure d'un paquet, sans rien construire | Le **classement** des coûts, pour décider quoi embarquer |
+| The ISO manifest (`nix build .#closure-manifest`) | The **real** closure of the built system: 732 paths, hashes included | **The budget.** It is the only value that describes the artifact |
+| `nix path-info --store https://cache.nixos.org` on an isolated package | The closure of a package, without building anything | The **ranking** of costs, to decide what to ship |
 
 ```bash
-# closure individuelle d'un paquet, sans rien construire
-nix eval --raw -f '<nixpkgs>' <paquet>.outPath        # -> /nix/store/...
-nix path-info --store https://cache.nixos.org -rs --json --json-format 1 <chemin>
+# individual closure of a package, without building anything
+nix eval --raw -f '<nixpkgs>' <package>.outPath        # -> /nix/store/...
+nix path-info --store https://cache.nixos.org -rs --json --json-format 1 <path>
 ```
 
-Précaution de lecture : une **closure individuelle** compte les dépendances
-communes en entier. Additionner plusieurs closures surestime donc toujours le
-total. Ces valeurs servent à comparer des outils entre eux, jamais à additionner.
+A caution when reading: an **individual closure** counts shared dependencies in
+full. Adding several closures together therefore always overestimates the total.
+These values serve to compare tools with one another, never to add up.
 
-## La closure de l'image (2026.10)
+## The closure of the image (2026.10)
 
-Mesurée sur le manifeste de l'ISO, donc sur l'artefact lui-même.
+Measured on the ISO manifest, therefore on the artifact itself.
 
-| Poste | Store | Chemins |
+| Line item | Store | Paths |
 |---|---|---|
-| Firmware (11 paquets) | **836,4 MiB** | 11 |
-| dont `linux-firmware-20260916-zstd` | 809,5 MiB | 1 |
-| Modules du noyau | 145,2 MiB | 1 |
-| Copie de nixpkgs (`nixos-26.11…`) | 200,0 MiB | 1 |
+| Firmware (11 packages) | **836,4 MiB** | 11 |
+| of which `linux-firmware-20260916-zstd` | 809,5 MiB | 1 |
+| Kernel modules | 145,2 MiB | 1 |
+| nixpkgs copy (`nixos-26.11…`) | 200,0 MiB | 1 |
 | `python3-3.14.7` | 136,6 MiB | 1 |
 | `systemd-261.3` | 63,0 MiB | 1 |
 | `git-2.55.0` | 56,5 MiB | 1 |
 | `vim-9.2.1001` | 43,6 MiB | 1 |
-| tout le reste (716 chemins) | ~986 MiB | 716 |
+| everything else (716 paths) | ~986 MiB | 716 |
 | **Total** | **2467,7 MiB** (2,41 GiB) | **732** |
 
-**Le firmware pèse 34 % du total**, pas 70 %. C'est le premier poste isolé, mais
-il ne domine pas la discussion autant qu'on le croyait — voir la correction
-ci-dessous. Les 716 autres chemins, qui incluent toute la tuyauterie du système
-(systemd, la pile Nix, Python, Perl, git, vim), pèsent à eux seuls plus que le
-double du firmware.
+**Firmware accounts for 34 % of the total**, not 70 %. It is the largest single
+line item, but it does not dominate the discussion as much as was believed — see
+the correction below. The other 716 paths, which include all the system's
+plumbing (systemd, the Nix stack, Python, Perl, git, vim), weigh on their own
+more than twice the firmware.
 
-## Ce que la mesure réelle a corrigé
+## What the real measurement corrected
 
-La version précédente de ce document annonçait **186 chemins / 2675,6 MiB** avec
-un firmware à 70 %. Les deux chiffres étaient faux, et pour deux raisons
-distinctes :
+The previous version of this document stated **186 paths / 2675,6 MiB** with
+firmware at 70 %. Both figures were wrong, and for two distinct reasons:
 
-- **Le firmware était surévalué.** Le chiffre de 1884 MiB portait sur le paquet
-  `linux-firmware` **monolithique**, alors que l'image embarque la variante
-  `-zstd`, à 809,5 MiB. Le facteur d'erreur est de 2,3.
-- **Le système était sous-évalué.** Les 186 chemins étaient l'union des
-  composants *choisis explicitement* (firmware, noyau, outils listés). La
-  closure réelle en compte 732 : les 546 autres viennent du profil
-  `installation-cd-base` — systemd, les outils Nix, la pile Perl de `git`,
-  Python, vim, `nixos-rebuild`.
+- **Firmware was overestimated.** The figure of 1884 MiB applied to the
+  **monolithic** `linux-firmware` package, whereas the image ships the
+  `-zstd` variant, at 809,5 MiB. The error factor is 2,3.
+- **The system was underestimated.** The 186 paths were the union of the
+  components *explicitly chosen* (firmware, kernel, listed tools). The real
+  closure counts 732: the other 546 come from the `installation-cd-base`
+  profile — systemd, the Nix tools, `git`'s Perl stack, Python, vim,
+  `nixos-rebuild`.
 
-Le total se trouvait donc par hasard à peu près juste (2675,6 contre 2467,7 MiB,
-soit 8 % d'écart) alors que **sa composition était fausse**. C'est le pire cas :
-un chiffre qui a l'air bon et qui oriente mal les décisions. La leçon est que la
-seule mesure qui vaut est celle de l'artefact, jamais celle d'un modèle de
-l'artefact.
+The total therefore happened to be roughly right (2675,6 versus 2467,7 MiB, an
+8 % discrepancy) while **its composition was wrong**. This is the worst case: a
+figure that looks good and sends decisions in the wrong direction. The lesson is
+that the only measurement that counts is that of the artifact, never that of a
+model of the artifact.
 
-## Coût des outils optionnels
+## Cost of the optional tools
 
-Closure individuelle, mesurée sur le cache binaire. Ce sont des postes de
-dépannage supplémentaires, à activer en connaissance —
+Individual closure, measured on the binary cache. These are additional
+troubleshooting line items, to be enabled knowingly —
 `depannix.optionalTools = [ … ]`.
 
-| Outil | Store | Chemins |
+| Tool | Store | Paths |
 |---|---|---|
 | `fd` | 50,9 MiB | 7 |
 | `fzf` | 50,1 MiB | 11 |
@@ -85,42 +84,42 @@ dépannage supplémentaires, à activer en connaissance —
 | `phoronix-test-suite` | 606,0 MiB | 139 |
 | `guymager` | 2539,6 MiB | 259 |
 
-`guymager` (2,5 GiB de closure) illustre le piège : un outil « évident » pour un
-média de récupération coûte à lui seul autant que tout le reste, parce qu'il
-embarque la pile Qt. `gparted` et `gsmartcontrol` paient le même écot (interface
-graphique) — c'est pourquoi la saveur `minimal` ne les embarque pas et s'en
-remet à `parted`, `gptfdisk` et `smartctl`.
+`guymager` (2,5 GiB of closure) illustrates the trap: an “obvious” tool for a
+recovery medium costs on its own as much as everything else, because it bundles
+the Qt stack. `gparted` and `gsmartcontrol` pay the same toll (graphical
+interface) — which is why the `minimal` flavour does not ship them and relies on
+`parted`, `gptfdisk` and `smartctl`.
 
-## Taille d'ISO mesurée (2026.10)
+## Measured ISO size (2026.10)
 
 **1453,2 MiB (1,419 GiB).**
 
 | | |
 |---|---|
-| octets | 1 523 744 768 |
+| bytes | 1 523 744 768 |
 | MiB / GiB | 1453,2 / 1,419 |
-| sha256 | `943614f5cdd5fcd947f8947013e4e1dae5b5cc98338180d1df3559eee0d4728a` |
-| compression | squashfs, `zstd -Xcompression-level 19`, 2 processeurs |
-| durée de compression | ~14 min sur 2 vCPU |
-| rapport store → ISO | 2467,7 MiB → 1453,2 MiB, soit **59 %** |
+| sha256 | `85d2355bda8bff04d59c1995ed07a98bd0142528b1fd14d25bd6bccfa810e355` |
+| compression | squashfs, `zstd -Xcompression-level 19`, 2 processors |
+| compression time | ~14 min on 2 vCPU |
+| store → ISO ratio | 2467,7 MiB → 1453,2 MiB, i.e. **59 %** |
 
-Repères de contexte :
+Context benchmarks:
 
-- SystemRescue 13.02 : 1318 MiB
-- ISO NixOS minimale officielle : 1533 MiB
-- ISO NixOS graphique (GNOME) officielle : 3574 MiB
+- SystemRescue 13.02: 1318 MiB
+- Official minimal NixOS ISO: 1533 MiB
+- Official graphical NixOS ISO (GNOME): 3574 MiB
 
-Dépannix est à **135 MiB au-dessus** de SystemRescue et **80 MiB sous** l'ISO
-NixOS minimale officielle. L'objectif n'est pas de battre SystemRescue en taille :
-c'est d'arriver dans la même zone **avec** un moyen d'étendre l'outillage sans
-reflasher, et avec une composition publiable. Le surcoût par rapport à
-SystemRescue est le firmware redistribuable complet et la copie de nixpkgs.
+Dépannix is **135 MiB above** SystemRescue and **80 MiB below** the official
+minimal NixOS ISO. The goal is not to beat SystemRescue on size: it is to land in
+the same zone **with** a way to extend the tooling without reflashing, and with a
+publishable composition. The overhead compared with SystemRescue is the complete
+redistributable firmware and the nixpkgs copy.
 
-## Contenu vérifié indépendamment
+## Independently verified content
 
-Le manifeste publie chaque chemin avec son hachage, en base32 **et** en SRI. La
-vérification se fait donc par un simple GET, sans Nix et sans accorder aucune
-confiance à l'auteur du build :
+The manifest publishes every path with its hash, in base32 **and** in SRI.
+Verification is therefore done by a simple GET, without Nix and without granting
+any trust to the build author:
 
 ```bash
 awk '!/^#/ {print $1}' closure-sri.tsv | while read -r p; do
@@ -129,30 +128,30 @@ awk '!/^#/ {print $1}' closure-sri.tsv | while read -r p; do
 done
 ```
 
-Résultat mesuré sur l'image 2026.10 :
+Result measured on the 2026.10 image:
 
 | | |
 |---|---|
-| chemins au manifeste | 732 |
-| hachages **identiques** à cache.nixos.org | **685** |
-| absents de tout cache (dérivés localement) | 47 |
+| paths in the manifest | 732 |
+| hashes **identical** to cache.nixos.org | **685** |
+| absent from every cache (built locally) | 47 |
 | divergences | **0** |
 
-Les 47 chemins non vérifiables ainsi sont le système NixOS lui-même, les fichiers
-`/etc` générés et les unités systemd. Pour ceux-là, seule la reconstruction fait
-foi — d'où l'intérêt de la stabilité observée : deux constructions successives
-ont produit les mêmes empreintes pour `closure.json`
-(`79fb15ce…`) et `store-paths.txt` (`c3fd0045…`).
+The 47 paths not verifiable this way are the NixOS system itself, the generated
+`/etc` files and the systemd units. For those, only rebuilding is authoritative —
+hence the value of the observed stability: two successive builds produced the
+same fingerprints for `closure.json` (`3140438d…`) and `store-paths.txt`
+(`888e156f…`).
 
-## La règle
+## The rule
 
-> **Aucun outil n'entre dans l'ISO sans son chiffre de closure.**
+> **No tool enters the ISO without its closure figure.**
 
-Non pas par avarice, mais parce qu'un média de dépannage dont on ignore la
-composition n'est pas un média de dépannage. Le garde-fou
-`checks.size-budget` (1800 MiB) échoue en CI si l'ISO dérive, et ce document doit
-être mis à jour en même temps que `modules/tools.nix`.
+Not out of stinginess, but because a rescue medium whose composition is unknown
+is not a rescue medium. The `checks.size-budget` guard (1800 MiB) fails in CI if
+the ISO drifts, and this document must be updated at the same time as
+`modules/tools.nix`.
 
-Corollaire, appris à la dure : le chiffre doit venir de l'**artefact**, pas d'un
-modèle de l'artefact. `nix build .#closure-manifest` est là pour ça — c'est lui
-qui fait autorité, y compris contre ce document.
+Corollary, learned the hard way: the figure must come from the **artifact**, not
+from a model of the artifact. `nix build .#closure-manifest` exists for that —
+it is what holds authority, including against this document.

@@ -1,12 +1,12 @@
 name: monthly
 
-# Une release par mois, sans intervention humaine : on suit nixpkgs-unstable,
-# on ouvre une PR, la CI construit et teste, le merge déclenche une release.
-# Le tag vYYYY.MM est posé à la main après merge (ou par un tag automatique si
-# tu préfères — la CI fait exactement la même chose).
+# One release a month, with no human intervention: we follow nixpkgs-unstable,
+# open a pull request, CI builds and tests it, and the merge triggers a release.
+# The vYYYY.MM tag is applied by hand after the merge (or by an automatic tag if
+# you prefer — CI does exactly the same thing either way).
 on:
   schedule:
-    - cron: "0 6 1 * *" # le 1er du mois à 06:00 UTC
+    - cron: "0 6 1 * *" # 06:00 UTC on the 1st of the month
   workflow_dispatch:
 
 permissions:
@@ -15,17 +15,19 @@ permissions:
 
 jobs:
   bump:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5
 
-      - name: Installer Nix
+      - name: Install Nix
         uses: DeterminateSystems/nix-installer-action@v22
+        with:
+          flakehub: false
 
-      - name: Mettre à jour flake.lock
+      - name: Update flake.lock
         run: nix flake update
 
-      - name: Mettre à jour la version CalVer
+      - name: Update the CalVer version
         id: version
         run: |
           v=$(date -u +%Y.%m)
@@ -33,7 +35,7 @@ jobs:
           grep -n 'version = "' flake.nix
           echo "value=$v" >> "$GITHUB_OUTPUT"
 
-      - name: Résumé du changement de nixpkgs
+      - name: Summary of the nixpkgs change
         run: |
           {
             echo "### nixpkgs"
@@ -43,22 +45,21 @@ jobs:
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Ouvrir la PR
+      - name: Open the pull request
         uses: peter-evans/create-pull-request@v8
         with:
           branch: release/${{ steps.version.outputs.value }}
           title: "release: ${{ steps.version.outputs.value }}"
           commit-message: "release: ${{ steps.version.outputs.value }}"
           body: |
-            Mise à jour mensuelle automatique.
+            Automated monthly update.
 
-            - `flake.lock` suit `nixos-unstable`
-            - version CalVer → `${{ steps.version.outputs.value }}`
+            - `flake.lock` follows `nixos-unstable`
+            - CalVer version → `${{ steps.version.outputs.value }}`
 
-            La CI construit l'ISO, lance les tests de boot BIOS et EFI, vérifie
-            le budget de taille et publie le manifeste de composition.
+            CI builds the ISO, runs the BIOS and EFI boot tests, checks the size
+            budget and publishes the composition manifest.
 
-            **Ne pas merger si un test échoue** : on reste alors sur le dernier
-            mois vert. C'est la règle qui garantit qu'une release ne casse pas
-            silencieusement.
+            **Do not merge if any test fails**: we then stay on the last green
+            month. That is the rule that keeps a release from breaking silently.
           delete-branch: true

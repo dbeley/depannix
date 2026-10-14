@@ -1,12 +1,12 @@
-# Sélection des outils.
+# Tool selection.
 #
-# Règle du projet : aucun outil n'entre dans l'ISO sans son chiffre de closure.
-# Les tailles ci-dessous sont mesurées hors ligne, sans rien construire :
+# Project rule: no tool enters the ISO without its closure figure. The sizes
+# below are measured offline, without building anything:
 #
 #   nix path-info --store https://cache.nixos.org -rs --json <outPath>
 #
-# Le tri « core / optional » n'est pas esthétique : il sépare la *capacité*
-# (on ne peut pas réparer sans) du *confort* (cosmétique ou redondant).
+# The core / optional split is not cosmetic: it separates *capability* (you
+# cannot repair without it) from *convenience* (cosmetic or redundant).
 {
   config,
   lib,
@@ -20,12 +20,12 @@ let
     types
     ;
 
-  # ── Capacité : chaque entrée correspond à un geste de dépannage ────────────
+  # ── Capability: every entry maps to a repair gesture ──────────────────────
   core = with pkgs; [
-    # Partitionnement et systèmes de fichiers
-    parted # manipulation de tables de partitions
-    gptfdisk # GPT, notamment la reconstruction de table corrompue
-    dosfstools # FAT/exFAT : partitions EFI
+    # Partitioning and filesystems
+    parted # partition table manipulation
+    gptfdisk # GPT, including rebuilding a corrupted table
+    dosfstools # FAT/exFAT: EFI partitions
     e2fsprogs # fsck.ext4, dumpe2fs, debugfs
     exfatprogs
     ntfs3g
@@ -35,41 +35,41 @@ let
     jfsutils
     nilfs-utils
     bcachefs-tools
-    mdadm # grappes RAID logicielles
-    lvm2 # LVM : le cas le plus fréquent de « mes volumes ont disparu »
-    cryptsetup # LUKS : ouvrir un disque chiffré depuis un live
+    mdadm # software RAID arrays
+    lvm2 # LVM: the most common "my volumes disappeared" case
+    cryptsetup # LUKS: open an encrypted disk from a live medium
     squashfs-tools
-    partclone # clonage au niveau bloc, avec conscience du FS
-    fsarchiver # sauvegarde/restauration de FS par-dessus un autre FS
+    partclone # block-level cloning, filesystem-aware
+    fsarchiver # filesystem backup/restore across another filesystem
 
-    # Récupération de données et clonage
-    testdisk # testdisk + photorec : tables de partitions et fichiers effacés
-    ddrescue # lecture d'un disque qui meurt, avec reprise
-    nwipe # effacement sécurisé
-    dcfldd # dd instrumenté, hachage à la volée
-    sleuthkit # inspection de FS brut (fls, icat, mmls)
+    # Data recovery and cloning
+    testdisk # testdisk + photorec: partition tables and deleted files
+    ddrescue # read a dying disk, resumable
+    nwipe # secure erasure
+    dcfldd # instrumented dd, hashes on the fly
+    sleuthkit # raw filesystem inspection (fls, icat, mmls)
 
-    # Diagnostic matériel
-    smartmontools # smartctl : santé des disques
+    # Hardware diagnostics
+    smartmontools # smartctl: disk health
     nvme-cli
     hdparm
     sdparm
-    lshw # inventaire matériel lisible
-    dmidecode # DMI/firmware : numéro de série, BIOS, slots mémoire
+    lshw # readable hardware inventory
+    dmidecode # DMI/firmware: serial number, BIOS, memory slots
     pciutils # lspci
     usbutils # lsusb
-    ethtool # état de la couche liaison : autoneg, vitesse, erreurs
+    ethtool # link-layer state: autoneg, speed, errors
 
-    # Réseau
+    # Network
     iperf3
     nmap
     tcpdump
     socat
 
-    # Confort de travail en ligne de commande (utile au diagnostic, pas décoratif)
+    # Command-line working comfort (useful for diagnosis, not decorative)
     jq
     zstd
-    file # identifier un contenu quand les extensions mentent
+    file # identify content when extensions lie
     lsof
     strace
     tmux
@@ -79,25 +79,25 @@ let
     less
   ];
 
-  # ── Confort : mesuré, donc assumé comme optionnel ─────────────────────────
-  # Chiffres = closure du paquet seul, mesurée via le cache binaire officiel.
-  # Attention : ces valeurs ne s'additionnent pas (les dépendances communes
-  # sont comptées plusieurs fois). Elles servent au classement, pas au budget.
-  # Le budget exact, c'est l'union — voir docs/budget.md.
+  # ── Convenience: measured, therefore accepted as optional ─────────────────
+  # Figures = closure of the package alone, measured through the official
+  # binary cache. Beware: these values do not add up (shared dependencies are
+  # counted several times). They rank the cost, they do not budget it.
+  # The exact budget is the union — see docs/budget.md.
   optional = {
-    fzf = pkgs.fzf; # 50 MiB   11 chemins
-    fd = pkgs.fd; # 51 MiB    7 chemins
-    ripgrep = pkgs.ripgrep; # 56 MiB    8 chemins
-    eza = pkgs.eza; # 62 MiB   13 chemins  — ls moderne
-    bat = pkgs.bat; # 73 MiB   16 chemins  — cat avec coloration
-    hwinfo = pkgs.hwinfo; # 135 MiB  27 chemins
-    inxi = pkgs.inxi; # 140 MiB  35 chemins — résumé système en une commande
-    neovim = pkgs.neovim; # 262 MiB 115 chemins — éditeur
-    fish = pkgs.fish; # 309 MiB  45 chemins — le luxe le plus cher du lot
-    gsmartcontrol = pkgs.gsmartcontrol; # 317 MiB 112 chemins — GUI smartctl
-    gparted = pkgs.gparted; # 385 MiB 132 chemins — GUI de partitionnement
-    phoronix-test-suite = pkgs.phoronix-test-suite; # 606 MiB 139 chemins (PHP)
-    guymager = pkgs.guymager; # 2540 MiB 259 chemins — imageur forensic Qt
+    fzf = pkgs.fzf; # 50 MiB   11 paths
+    fd = pkgs.fd; # 51 MiB    7 paths
+    ripgrep = pkgs.ripgrep; # 56 MiB    8 paths
+    eza = pkgs.eza; # 62 MiB   13 paths  — modern ls
+    bat = pkgs.bat; # 73 MiB   16 paths  — cat with colour
+    hwinfo = pkgs.hwinfo; # 135 MiB  27 paths
+    inxi = pkgs.inxi; # 140 MiB  35 paths — system summary in one command
+    neovim = pkgs.neovim; # 262 MiB 115 paths — editor
+    fish = pkgs.fish; # 309 MiB  45 paths — the most expensive luxury here
+    gsmartcontrol = pkgs.gsmartcontrol; # 317 MiB 112 paths — smartctl GUI
+    gparted = pkgs.gparted; # 385 MiB 132 paths — partitioning GUI
+    phoronix-test-suite = pkgs.phoronix-test-suite; # 606 MiB 139 paths (PHP)
+    guymager = pkgs.guymager; # 2540 MiB 259 paths — Qt forensic imager
   };
 in
 {
@@ -109,10 +109,10 @@ in
       "fd"
     ];
     description = ''
-      Outils de confort activés. Par défaut, seulement trois qui pèsent
-      ~157 MiB à eux trois (closures individuelles) : même la commodité se paie.
-      Activer `fish`, `gparted` ou `guymager` se compte en centaines de MiB ;
-      le garde-fou de taille en CI le signalera. Mesures : docs/budget.md.
+      Convenience tools that are enabled. By default only three, weighing
+      ~157 MiB together (individual closures): even comfort has a price.
+      Enabling `fish`, `gparted` or `guymager` costs hundreds of MiB; the CI
+      size guard will flag it. Measurements: docs/budget.md.
     '';
   };
 

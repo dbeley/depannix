@@ -1,162 +1,159 @@
 # Dépannix
 
-Environnement de dépannage NixOS, construit en ISO minimale, reproductible et
-vérifiable. Un média qu'on peut étendre à la demande sans le reflasher, et dont
-on peut publier la composition exacte.
+A NixOS rescue environment, built as a minimal, reproducible and verifiable ISO.
+A medium you can extend on demand without reflashing it, and whose exact
+composition you can publish.
 
-**État : l'ISO se construit et démarre.** Construite de bout en bout, testée en
-BIOS et en EFI sous KVM, composition vérifiée contre `cache.nixos.org`. Aucune
-release publiée pour l'instant : la première sortira de la CI.
+**Status: the ISO builds and boots.** Built end to end, tested in BIOS and EFI
+under KVM, composition verified against `cache.nixos.org`. No release published
+yet: the first one will come out of CI.
 
 | | |
 |---|---|
 | ISO | 1453,2 MiB (1,419 GiB) |
-| store embarqué | 732 chemins, 2467,7 MiB |
-| hachages confirmés par `cache.nixos.org` | 685 sur 732, zéro divergence |
-| reproductibilité | bit-à-bit, vérifiée sur deux machines distinctes |
-| CI | verte, x86_64 et aarch64 (boot testé en x86_64) |
-| dépôt | https://github.com/dbeley/depannix |
+| embedded store | 732 paths, 2467,7 MiB |
+| hashes confirmed by `cache.nixos.org` | 685 out of 732, zero divergence |
+| reproducibility | bit-for-bit, verified on two distinct machines |
+| CI | green, x86_64 and aarch64 (boot tested on x86_64) |
+| repository | https://github.com/dbeley/depannix |
 
-La recette pour vérifier soi-même est plus bas dans ce fichier.
+The recipe for verifying it yourself is further down in this file.
 
-## Démarrage
+## Getting started
 
 ```bash
-nix build .#minimal-fast          # ISO, compression rapide (itération locale)
-nix build .#minimal               # ISO de release, compression zstd-19
-nix run                           # démarre l'ISO dans QEMU
-MODE=efi nix run                  # idem, en firmware EFI
+nix build .#minimal-fast          # ISO, fast compression (local iteration)
+nix build .#minimal               # release ISO, zstd-19 compression
+nix run                           # boots the ISO in QEMU
+MODE=efi nix run                  # same, with EFI firmware
 
-nix build .#checks.x86_64-linux.boot-test-bios   # test de boot automatisé
+nix build .#checks.x86_64-linux.boot-test-bios   # automated boot test
 nix build .#packages.x86_64-linux.closure-manifest
-nix flake check                   # test de boot BIOS + EFI + budget de taille
+nix flake check                   # BIOS + EFI boot test + size budget
 ```
 
-Écrire sur une clé : `dd`, jamais une partition.
+Writing to a USB stick: `dd`, never a partition.
 
 ```bash
-lsblk -o NAME,SIZE,TYPE,TRAN,MODEL     # repérer la clé : TRAN=usb
+lsblk -o NAME,SIZE,TYPE,TRAN,MODEL     # identify the stick: TRAN=usb
 sudo dd if=result/iso/depannix-*.iso of=/dev/sdX bs=4M status=progress conv=fsync
 ```
 
-## Ce qu'il y a dans l'image, et la vraie façon de l'étendre
+## What's in the image, and the real way to extend it
 
-La sélection est dans `modules/tools.nix`, séparée en **capacité** (on ne peut
-pas réparer sans) et **confort** (optionnel, chiffré). Le détail des mesures est
-dans `docs/budget.md`.
+The selection lives in `modules/tools.nix`, split into **capability** (you can't
+repair without it) and **convenience** (optional, sized). The detailed
+measurements are in `docs/budget.md`.
 
-Le point qui change tout par rapport à SystemRescue ou Grml : **le catalogue
-n'est pas figé à la gravure**. Une ISO NixOS embarque la copie de nixpkgs et
-`stdenv`, donc sur une machine dépannée mais connectée :
+The one thing that changes everything compared to SystemRescue or Grml: **the
+catalogue isn't fixed at burn time**. A NixOS ISO ships a copy of nixpkgs and
+`stdenv`, so on a machine you're rescuing that still has connectivity:
 
 ```bash
-nix shell nixpkgs#outil-quelconque    # n'importe lequel des ~100 000 paquets
+nix shell nixpkgs#outil-quelconque    # any of the ~100 000 packages
 ```
 
-C'est pour cette raison que 281 MiB de store sont volontairement dépensés en
-copie de nixpkgs + `stdenvNoCC` : sans réseau, on peut encore construire un
-paquet depuis les sources. Un média de dépannage qui suppose une machine saine
-n'est pas un média de dépannage.
+That's why 281 MiB of store is deliberately spent on a copy of nixpkgs +
+`stdenvNoCC`: with no network, you can still build a package from source. A
+rescue medium that assumes a healthy machine isn't a rescue medium.
 
-## Les règles du projet
+## Project rules
 
-1. **Aucun outil n'entre dans l'ISO sans son chiffre de closure** mesuré et
-   inscrit dans `docs/budget.md`.
-2. **Rien de non redistribuable.** `nixpkgs.config.allowUnfree = false`, et le
-   firmware est limité au périmètre redistribuable (`hardware.enableAllHardware`
-   est explicitement désactivé). C'est ce qui rend légitime de publier la
-   composition de l'image.
-3. **Aucun secret ni clé personnelle dans l'artefact.** `depannix.authorizedKeys`
-   est vide par défaut ; sshd n'accepte que les clés, jamais les mots de passe.
-4. **Une release ne part pas si un test échoue.** On reste sur le dernier mois
-   vert plutôt que de publier une ISO qui ne boote pas.
+1. **No tool goes into the ISO without its closure size** measured and recorded
+   in `docs/budget.md`.
+2. **Nothing that can't be redistributed.** `nixpkgs.config.allowUnfree = false`,
+   and firmware is limited to what's redistributable
+   (`hardware.enableAllHardware` is explicitly disabled). That's what makes it
+   legitimate to publish the image's composition.
+3. **No secrets or personal keys in the artifact.** `depannix.authorizedKeys` is
+   empty by default; sshd accepts keys only, never passwords.
+4. **No release ships if a test fails.** We stay on the last green month rather
+   than publish an ISO that won't boot.
 
-## Prouver le contenu
+## Proving the contents
 
-Le projet vise un artefact dont n'importe qui peut vérifier la composition sans
-faire confiance à celui qui l'a produit.
+The project aims for an artifact whose composition anyone can verify without
+trusting whoever produced it.
 
-| Pièce | Ce qu'elle prouve |
+| Piece | What it proves |
 |---|---|
-| `flake.lock` (versionné) | la révision nixpkgs exacte, et donc tout l'arbre des dépendances |
-| `closure-manifest` | la liste exhaustive des chemins du store embarqués + leur hachage |
-| `SHA256SUMS` + signature minisign | l'ISO publiée est bien celle qui a été construite |
-| attestation de provenance (CI) | l'artefact sort de ce workflow, sur ce commit |
+| `flake.lock` (versioned) | the exact nixpkgs revision, and therefore the whole dependency tree |
+| `closure-manifest` | the exhaustive list of embedded store paths + their hashes |
+| `SHA256SUMS` + minisign signature | the published ISO is indeed the one that was built |
+| provenance attestation (CI) | the artifact came out of this workflow, on this commit |
 
-Vérification, de la plus faible à la plus forte :
+Verification, from weakest to strongest:
 
 ```bash
-# 1. l'ISO est intacte
+# 1. the ISO is intact
 sha256sum -c SHA256SUMS
 
-# 2. sa composition est celle du manifeste publié — sans Nix, et sans accorder
-#    aucune confiance à celui qui a construit l'image : un simple GET par paquet
+# 2. its composition is the one in the published manifest — without Nix, and
+#    without trusting whoever built the image: one plain GET per package
 awk '!/^#/ {print $1}' closure-sri.tsv | while read -r p; do
   h=$(basename "$p")
   curl -s "https://cache.nixos.org/${h%%-*}.narinfo" | sed -n 's/^NarHash: //p'
 done
-# puis comparer chaque valeur au champ narHash de closure.json
+# then compare each value against the narHash field of closure.json
 
-# 3. on peut reconstruire le même système à l'identique
+# 3. you can rebuild the exact same system
 git checkout <tag> && nix build .#minimal
 ```
 
-Mesure sur l'image 2026.10 : **685 des 732 chemins** sont confirmés à l'identique
-par `cache.nixos.org`, **zéro divergence**. Les 47 autres sont dérivés localement
-(le système NixOS lui-même, les `/etc` générés, les unités systemd) : ils
-n'existent dans aucun cache binaire, et pour eux seule la reconstruction fait foi.
+Measured on the 2026.10 image: **685 of the 732 paths** are confirmed identical
+by `cache.nixos.org`, **zero divergence**. The other 47 are derived locally (the
+NixOS system itself, the generated `/etc`, the systemd units): they exist in no
+binary cache, and for those only a rebuild is authoritative.
 
-La reproductibilité bit-à-bit de l'ISO est **établie**, et c'est le résultat le
-plus important du projet. La même révision, construite sur le runner GitHub
-(4 vCPU, store téléchargé intégralement) et sur une machine NixOS (2 vCPU, store
-déjà peuplé), produit le **même hachage** `943614f5…d4728a` et le **même nombre de
-secteurs** (744 016). Deux environnements distincts, un seul artefact : un tiers
-peut donc reconstruire l'image et la comparer à la nôtre.
+The bit-for-bit reproducibility of the ISO is **established**, and it is the
+most important result of the project. The same revision, built on the GitHub
+runner (4 vCPU, store downloaded in full) and on a NixOS machine (2 vCPU, store
+already populated), produces the **same hash** `85d2355b…10e355` and the **same
+sector count** (744 016). Two distinct environments, a single artifact: a third
+party can therefore rebuild the image and compare it to ours.
 
-Deux constructions successives du manifeste ont de même donné les mêmes
-empreintes (`closure.json` → `79fb15ce…`, `store-paths.txt` → `c3fd0045…`).
+Two successive builds of the manifest likewise produced the same digests
+(`closure.json` → `3140438d…`, `store-paths.txt` → `888e156f…`).
 
-## Limites connues
+## Known limitations
 
-- **Secure Boot : à désactiver.** L'ISO n'est pas signée. C'est le principal
-  manque par rapport à Parted Magic, et un chantier à part entière (shim signé,
-  enrôlement MOK).
-- **Pas d'interface graphique** en v1. Choix assumé : GNOME coûte ~1,1 GiB de
-  store pour `nautilus` seul, et le montage automatique des disques est
-  précisément ce qu'il ne faut pas en récupération de données.
-- **Pas de persistance.** En v1, tout ce qui est installé en session disparaît au
-  redémarrage. La persistance est prévue en v2.
-- **Comptes sans mot de passe.** Comme tout média live, `root` et `nixos` n'ont
-  pas de mot de passe en session. Acceptable physiquement, à ne pas laisser
-  traîner branché sur une machine réseau.
-- **`aarch64` non testée en CI.** Les runners arm64 gratuits n'exposent pas
-  `/dev/kvm` : l'ISO est construite, mais son démarrage se teste à la main.
-- **Pas de Clonezilla.** Absent de nixpkgs ; le clonage repose sur `partclone`,
-  `fsarchiver` et `ddrescue`, qui couvrent le besoin.
+- **Secure Boot: must be disabled.** The ISO isn't signed. This is the main gap
+  compared to Parted Magic, and a project in its own right (signed shim, MOK
+  enrollment).
+- **No graphical interface** in v1. A deliberate choice: GNOME costs ~1,1 GiB of
+  store for `nautilus` alone, and automatic disk mounting is precisely what you
+  must not have during data recovery.
+- **No persistence.** In v1, anything installed during a session disappears on
+  reboot. Persistence is planned for v2.
+- **Accounts with no password.** Like any live medium, `root` and `nixos` have no
+  password in a session. Acceptable physically, but don't leave it sitting
+  plugged into a networked machine.
+- **`aarch64` not tested in CI.** Free arm64 runners don't expose `/dev/kvm`:
+  the ISO is built, but its boot is tested by hand.
+- **No Clonezilla.** Not in nixpkgs; cloning relies on `partclone`,
+  `fsarchiver` and `ddrescue`, which cover the need.
 
-## Feuille de route
+## Roadmap
 
-- **v0.1 — fait.** Saveur minimale, ISO construite de bout en bout, démarrage
-  testé en BIOS et en EFI, manifeste de composition vérifié, garde-fous de taille
-  et de boot en CI.
-- **v0.2 — en cours.** La CI est verte sur les deux architectures et l'ISO se
-  reconstruit à l'identique sur une autre machine. Il reste la release signée
-  (clé minisign à créer, non chiffrée : minisign ne lit pas de mot de passe dans
-  l'environnement) et le test de démarrage `aarch64`, à faire à la main.
-- **v0.3** — release mensuelle automatique, budget de taille et test de boot
-  bloquants.
-- **v1.0** — documentation de vérification complète.
-- **v2** — persistance, puis éventuellement une saveur graphique.
+- **v0.1 — done.** Minimal flavor, ISO built end to end, boot tested in BIOS and
+  EFI, composition manifest verified, size and boot guardrails in CI.
+- **v0.2 — in progress.** CI is green on both architectures and the ISO rebuilds
+  identically on another machine. What remains is the signed release (minisign
+  key to create, unencrypted: minisign doesn't read a password from the
+  environment) and the `aarch64` boot test, to be done by hand.
+- **v0.3** — automatic monthly release, blocking size budget and boot test.
+- **v1.0** — complete verification documentation.
+- **v2** — persistence, then possibly a graphical flavor.
 
-## Arborescence
+## Tree
 
 ```
-flake.nix                  entrées et sorties : ISO, tests, garde-fous
-modules/base.nix           socle : firmware, noyau, licences, SSH, marqueur de boot
-modules/tools.nix          sélection d'outils, capacité vs confort, chiffrée
-modules/iso.nix            nom, menu de boot, compression, volume
-nix/qemu-run.sh            lancement QEMU : interactif ou test à marqueur
-nix/closure-manifest.nix   manifeste de composition (la preuve)
-docs/budget.md             mesures de taille et règle du projet
-docs/design.md             décisions d'architecture et leurs raisons
+flake.nix                  inputs and outputs: ISO, tests, guardrails
+modules/base.nix           foundation: firmware, kernel, licenses, SSH, boot marker
+modules/tools.nix          tool selection, capability vs convenience, sized
+modules/iso.nix            name, boot menu, compression, volume
+nix/qemu-run.sh            QEMU launch: interactive or marker-based test
+nix/closure-manifest.nix   composition manifest (the proof)
+docs/budget.md             size measurements and the project rule
+docs/design.md             architecture decisions and their rationale
 ```

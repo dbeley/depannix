@@ -15,8 +15,8 @@ concurrency:
   cancel-in-progress: true
 
 permissions:
-  contents: write # publier la release sur tag
-  id-token: write # attestation de provenance
+  contents: write # publish the release on tag
+  id-token: write # build provenance attestation
   attestations: write
 
 jobs:
@@ -27,16 +27,16 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # Épinglé, comme les actions et nixpkgs. `ubuntu-latest` bascule vers
-          # Ubuntu 26 le 19/10/2026 : laissé flottant, la chaîne de build
-          # changerait toute seule un jour ouvré sans que personne ne l'ait
-          # décidé. Aligné sur le runner arm64, lui aussi épinglé.
+          # Pinned, like the actions and nixpkgs. `ubuntu-latest` migrates to
+          # Ubuntu 26 on 2026-10-19: left floating, the build chain would change
+          # by itself one working day, with nobody having decided it. Aligned
+          # with the arm64 runner, which is pinned too.
           - runner: ubuntu-24.04
             system: x86_64-linux
             kvm: true
-          # Les runners arm64 gratuits n'exposent pas /dev/kvm (limitation du SKU
-          # Azure ARM, pas de l'image). On construit donc l'ISO aarch64 mais on
-          # ne la boote pas ici : le test aarch64 reste manuel. Voir docs/design.md.
+          # The free arm64 runners do not expose /dev/kvm (an Azure ARM SKU
+          # limitation, not an image one). So we build the aarch64 ISO but do not
+          # boot it here: the aarch64 boot test stays manual. See docs/design.md.
           - runner: ubuntu-24.04-arm
             system: aarch64-linux
             kvm: false
@@ -44,65 +44,68 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      # Version épinglée volontairement : `@main` peut changer sans prévenir,
-      # donc casser un build qui marchait, ou déplacer la chaîne de confiance
-      # sans trace. v22 est la dernière au moment de l'écriture.
-      - name: Installer Nix
+      # Version pinned on purpose: `@main` can change without warning, and thus
+      # break a build that used to work, or move the trust chain with no trace.
+      # v22 is the latest at the time of writing.
+      - name: Install Nix
         uses: DeterminateSystems/nix-installer-action@v22
         with:
-          # Par défaut l'action tente de se connecter à FlakeHub, échoue faute
-          # de jeton, et laisse un avertissement rouge à chaque run. Le projet
-          # n'utilise pas FlakeHub : on le désactive pour que le seul bruit
-          # restant dans les journaux soit un vrai signal.
-          flakehub: false
+          # This action installs Determinate Nix by default, and that is what
+          # makes it attempt a FlakeHub login: without a token the login fails
+          # and leaves a warning on every run. `flakehub: false` does NOT stop
+          # it — the input is deprecated and merely implies `determinate`. The
+          # real lever is `determinate`, and switching it off keeps CI on
+          # upstream Nix, the same one the development host runs. Verified not to
+          # change the artifacts: both distributions produced the same ISO hash,
+          # see docs/design.md.
+          determinate: false
 
-      - name: Marge disque avant build
+      - name: Disk headroom before build
         run: df -h /
 
-      - name: Activer KVM (x86_64 uniquement)
+      - name: Enable KVM (x86_64 only)
         if: matrix.kvm
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq qemu-system-x86
 
-          # L'utilisateur du runner n'est pas dans le groupe kvm et on ne peut
-          # pas se reconnecter en cours de job : la règle udev est le seul
-          # contournement qui marche.
+          # The runner user is not in the kvm group and we cannot reconnect
+          # mid-job: the udev rule is the only workaround that works.
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
             | sudo tee /etc/udev/rules.d/99-kvm4all.rules >/dev/null
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
 
-          # Échec immédiat si KVM n'est pas là : sans ce garde-fou, QEMU
-          # retombe silencieusement en émulation logicielle et le job expire.
+          # Fail immediately if KVM is not there: without this guard rail, QEMU
+          # silently falls back to software emulation and the job times out.
           test -w /dev/kvm
 
-      - name: Construire l'ISO
+      - name: Build the ISO
         run: nix build .#minimal --out-link result-iso -L
 
-      - name: Taille de l'ISO
+      - name: ISO size
         run: |
           iso=$(find result-iso/iso -name '*.iso' | head -1)
           ls -l "$iso"
-          printf 'taille : %s MiB\n' "$(( $(stat -c%s "$iso") / 1048576 ))"
+          printf 'size: %s MiB\n' "$(( $(stat -c%s "$iso") / 1048576 ))"
 
-      - name: Test de boot (BIOS puis EFI)
+      - name: Boot test (BIOS, then EFI)
         if: matrix.kvm
         run: |
-          # /dev/kvm doit être injecté dans le bac à sable : sans ça QEMU
-          # retombe en émulation logicielle et le job expire. Le seul fait
-          # d'activer KVM sur le runner ne suffit pas, parce qu'un `nix build`
-          # s'exécute dans un bac à sable qui n'expose pas /dev/kvm.
+          # /dev/kvm must be injected into the sandbox: without that, QEMU falls
+          # back to software emulation and the job times out. Enabling KVM on the
+          # runner is not enough by itself, because a `nix build` runs in a
+          # sandbox that does not expose /dev/kvm.
           nix build --option extra-sandbox-paths /dev/kvm .#checks.${{ matrix.system }}.boot-test-bios --out-link result-boot-bios -L
           nix build --option extra-sandbox-paths /dev/kvm .#checks.${{ matrix.system }}.boot-test-efi --out-link result-boot-efi -L
 
-      - name: Garde-fou de taille
+      - name: Size guard
         run: nix build .#checks.${{ matrix.system }}.size-budget --out-link result-budget -L
 
-      - name: Manifeste de composition
+      - name: Composition manifest
         run: nix build .#packages.${{ matrix.system }}.closure-manifest --out-link result-manifest -L
 
-      - name: Attestation de provenance
+      - name: Build provenance attestation
         if: github.event_name != 'pull_request'
         uses: actions/attest-build-provenance@v4
         with:
@@ -130,15 +133,15 @@ jobs:
           path: dist
           merge-multiple: true
 
-      - name: Empreintes
+      - name: Checksums
         run: |
           cd dist
           sha256sum ./*.iso > SHA256SUMS
           cat SHA256SUMS
 
-      # La signature reste optionnelle : le job ne doit pas échouer si le
-      # secret n'est pas configuré, mais on veut savoir si elle a eu lieu.
-      - name: Détecter la clé de signature
+      # Signing stays optional: the job must not fail when the secret is not
+      # configured, but we want to know whether it happened.
+      - name: Detect the signing key
         id: sig
         env:
           MINISIGN_KEY: ${{ secrets.MINISIGN_SECRET_KEY }}
@@ -147,22 +150,22 @@ jobs:
             echo "enabled=true" >> "$GITHUB_OUTPUT"
           else
             echo "enabled=false" >> "$GITHUB_OUTPUT"
-            echo "::warning::MINISIGN_SECRET_KEY absent — release non signée"
+            echo "::warning::MINISIGN_SECRET_KEY is absent — the release will not be signed"
           fi
 
-      # Le job `release` ne partage pas l'environnement du job `build` : sans
-      # cette étape, `nix` n'existe pas ici et la signature échoue.
-      - name: Installer Nix (pour minisign)
+      # The `release` job does not share the `build` job environment: without
+      # this step, `nix` does not exist here and signing fails.
+      - name: Install Nix (for minisign)
         if: steps.sig.outputs.enabled == 'true'
         uses: DeterminateSystems/nix-installer-action@v22
         with:
-          flakehub: false
+          determinate: false
 
-      # minisign ne lit le mot de passe ni dans l'environnement ni sur stdin :
-      # il le demande au terminal, absent en CI. La clé stockée dans le secret
-      # doit donc être NON chiffrée (`minisign -G -W`), sinon cette étape
-      # échoue. C'est le seul mode non interactif supporté en amont.
-      - name: Signer
+      # minisign reads the password neither from the environment nor from stdin:
+      # it asks the terminal, which CI does not have. The key stored in the
+      # secret must therefore be UNENCRYPTED (`minisign -G -W`), otherwise this
+      # step fails. It is the only non-interactive mode supported upstream.
+      - name: Sign
         if: steps.sig.outputs.enabled == 'true'
         run: |
           mkdir -p ~/.minisign
@@ -173,19 +176,29 @@ jobs:
         env:
           MINISIGN_KEY: ${{ secrets.MINISIGN_SECRET_KEY }}
 
-      - name: Publier
+      - name: Publish
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          # La signature est optionnelle : lister inconditionnellement
-          # SHA256SUMS.minisig ferait échouer toute release non signée, alors
-          # que c'est le cas par défaut.
+          # The signature is optional: listing SHA256SUMS.minisig
+          # unconditionally would fail every unsigned release, while that is the
+          # default case.
+          #
+          # Every artefact a third party needs in order to verify the image is
+          # published, not just the ISO: closure-sri.tsv and README.txt are what
+          # the verification recipe in the manifest actually consumes. Shipping
+          # the proof but not the instructions would be a strange kind of
+          # honesty.
           files=(
             dist/*.iso
             dist/SHA256SUMS
             dist/store-paths.txt
             dist/closure.json
+            dist/closure-sri.tsv
+            dist/total-nar-size.txt
+            dist/nix-path-registration.txt
             dist/MANIFEST.sha256
+            dist/README.txt
           )
           if [ -f dist/SHA256SUMS.minisig ]; then
             files+=(dist/SHA256SUMS.minisig)

@@ -1,34 +1,34 @@
-# Tout ce qui touche au média lui-même (nom, menu de boot, compression).
+# Everything that concerns the medium itself (name, boot menu, compression).
 { config, lib, pkgs, ... }:
 
 let
   cfg = config.depannix;
 in
 {
-  # Nom affiché dans le menu de boot. Le défaut de nixpkgs ajoute « Installer »,
-  # ce qui n'a aucun sens pour un média de dépannage.
+  # Name shown in the boot menu. The nixpkgs default appends "Installer", which
+  # makes no sense for a rescue medium.
   isoImage.prependToMenuLabel = "Dépannix — ";
   isoImage.appendToMenuLabel = lib.mkForce "";
   isoImage.edition = cfg.flavour;
 
-  # Étiquette ISO9660 : 32 caractères maximum.
+  # ISO9660 label: 32 characters maximum.
   isoImage.volumeID = "DEPANNIX_${lib.toUpper cfg.flavour}";
 
   isoImage.makeBiosBootable = pkgs.stdenv.hostPlatform.isx86_64;
   isoImage.makeEfiBootable = true;
   isoImage.makeUsbBootable = true;
 
-  # zstd plutôt que xz : rapport taille/temps nettement meilleur, et c'est
-  # désormais le défaut de nixpkgs. Le niveau est paramétrable pour pouvoir
-  # itérer vite en local sans reconstruire une ISO de release.
+  # zstd rather than xz: a clearly better size/time trade-off, and now the
+  # nixpkgs default. The level is configurable so we can iterate quickly
+  # locally without rebuilding a release ISO.
   isoImage.squashfsCompression = cfg.squashfsCompression;
 
-  # iso-image.nix définit image.baseName sans mkDefault → mkForce requis.
+  # iso-image.nix sets image.baseName without mkDefault → mkForce is required.
   image.baseName = lib.mkForce
     "depannix-${cfg.flavour}-${cfg.version}-${pkgs.stdenv.hostPlatform.system}";
 
-  # Fichier de version lisible depuis la machine dépannée, sans avoir à
-  # remonter à la source : utile pour vérifier ce qu'on a sous la main.
+  # Version file readable from the machine being rescued, without having to go
+  # back to the source: handy to check what you actually have in hand.
   isoImage.contents = [
     {
       source = pkgs.writeText "depannix-version" "${cfg.version}\n";

@@ -1,4 +1,4 @@
-# Socle de Dépannix : ce qui n'est pas négociable, par opposition aux outils.
+# The Dépannix foundation: what is not negotiable, as opposed to the tools.
 {
   config,
   lib,
@@ -27,21 +27,21 @@ in
     version = mkOption {
       type = types.str;
       default = "2026.10";
-      description = "Version CalVer du média, réutilisée dans le nom de l'ISO.";
+      description = "CalVer version of the medium, reused in the ISO file name.";
     };
 
     flavour = mkOption {
       type = types.enum [ "minimal" ];
       default = "minimal";
-      description = "Saveur construite. Une seule pour l'instant, par choix.";
+      description = "Flavour being built. Only one so far, by choice.";
     };
 
     squashfsCompression = mkOption {
       type = types.str;
       default = "zstd -Xcompression-level 19";
       description = ''
-        Options passées à mksquashfs. zstd-19 est le défaut de nixpkgs et offre
-        un bon rapport taille/temps ; le niveau 3 sert à itérer vite.
+        Options passed to mksquashfs. zstd-19 is the nixpkgs default and offers
+        a good size/time trade-off; level 3 is there to iterate fast.
       '';
     };
 
@@ -49,8 +49,8 @@ in
       type = types.bool;
       default = true;
       description = ''
-        ZFS est présent ici et redistribuable, contrairement à SystemRescue qui
-        l'exclut pour raisons de licence.
+        ZFS ships here, and it is redistributable, unlike SystemRescue which
+        excludes it for licensing reasons.
       '';
     };
 
@@ -58,9 +58,9 @@ in
       type = types.bool;
       default = true;
       description = ''
-        sshd actif, mais clé uniquement : PermitRootLogin est forcé à
-        « prohibit-password » et aucun mot de passe n'est défini.
-        Indispensable pour intervenir sur une machine sans écran.
+        sshd runs, but keys only: PermitRootLogin is forced to
+        "prohibit-password" and no password is ever set.
+        Indispensable to work on a machine with no screen.
       '';
     };
 
@@ -68,58 +68,62 @@ in
       type = types.listOf types.str;
       default = [ ];
       description = ''
-        Clés publiques des comptes root et nixos. Vide par défaut : on ne
-        bave jamais une clé personnelle dans un artefact destiné à être publié.
-        On peut toujours en déposer une à la main sur la clé USB.
+        Public keys for the root and nixos accounts. Empty by default: a
+        personal key is never baked into an artefact meant to be published.
+        One can always drop a key on the USB stick by hand.
       '';
     };
 
     extraTools = mkOption {
       type = types.listOf types.package;
       default = [ ];
-      description = "Outils additionnels, à réserver aux greffons et aux tests.";
+      description = "Additional tools, reserved for plugins and tests.";
     };
   };
 
   config = {
-    # ── Identité ─────────────────────────────────────────────────────────────
+    # ── Identity ─────────────────────────────────────────────────────────────
     system.nixos.distroName = "Dépannix";
     networking.hostName = "depannix";
 
-    # ── Firmware : redistribuable uniquement ────────────────────────────────
-    # installation-cd-base active enableAllHardware, qui embarque aussi du
-    # firmware sous licence non redistribuable (b43, facetimehd…). On garde le
-    # périmètre redistribuable : c'est ce qui rend légitime la publication de
-    # la composition de l'image. Coût mesuré : 1884 MiB de store (76 % du socle).
+    # ── Firmware: redistributable only ───────────────────────────────────────
+    # installation-cd-base enables enableAllHardware, which also pulls in
+    # firmware under non-redistributable licences (b43, facetimehd…). We keep
+    # to the redistributable set: that is what makes publishing the image
+    # composition legitimate.
+    #
+    # Measured cost, taken from the image manifest itself: 836.4 MiB, i.e. 34 %
+    # of the closure, with linux-firmware-20260916-zstd alone at 809.5 MiB.
+    # See docs/budget.md — an earlier revision of this comment claimed 1884 MiB
+    # and 76 %, which was wrong by a factor of two.
     hardware.enableAllHardware = mkForce false;
     hardware.enableAllFirmware = mkForce false;
     hardware.enableRedistributableFirmware = true;
 
-    # ── Documentation : inutile sur un média de rescue ───────────────────────
-    # installation-cd-minimal la réactive à l'override 500 → mkForce obligatoire.
-    # Les pages man des paquets ne sont pas concernées, seulement les manuels
-    # NixOS/nixpkgs.
+    # ── Documentation: pointless on a rescue medium ──────────────────────────
+    # installation-cd-minimal re-enables it with override 500 → mkForce needed.
+    # Package man pages are not affected, only the NixOS/nixpkgs manuals.
     documentation.enable = mkForce false;
     documentation.nixos.enable = mkForce false;
     documentation.man.enable = mkForce false;
     documentation.doc.enable = mkForce false;
 
-    # ── Noyau ────────────────────────────────────────────────────────────────
-    # Niveau de journalisation de la console. Piège d'ordre : nixpkgs ajoute
-    # `loglevel=` APRÈS les kernelParams, donc écrire « loglevel=7 » dans
-    # boot.kernelParams ne sert à rien — le défaut (4) gagne et la console série
-    # reste muette, ce qui rend un échec de démarrage indiagnosticable en CI.
-    # Vérifié sur la ligne de commande gravée dans l'ISO :
+    # ── Kernel ───────────────────────────────────────────────────────────────
+    # Console log level. An ordering trap: nixpkgs appends `loglevel=` AFTER
+    # kernelParams, so writing "loglevel=7" in boot.kernelParams does nothing —
+    # the default (4) wins and the serial console stays mute, which makes a boot
+    # failure undiagnosable in CI. Verified on the command line burned into the
+    # ISO:
     #   init=… console=ttyS0,115200 console=tty1 boot.shell_on_fail
     #   nohibernate root=fstab loglevel=4 lsm=landlock,yama,bpf
     boot.consoleLogLevel = 7;
 
-    # boot.kernelParams alimente bien les entrées de boot de l'ISO
-    # (iso-image.nix : `params = "init=… ${toString cfg.boot.kernelParams}"`).
+    # boot.kernelParams does feed the ISO boot entries
+    # (iso-image.nix: `params = "init=… ${toString cfg.boot.kernelParams}"`).
     boot.kernelParams = [
-      "console=ttyS0,115200" # ce qui rend le test de boot automatisé possible
+      "console=ttyS0,115200" # this is what makes the automated boot test possible
       "console=tty1"
-      "boot.shell_on_fail" # un shell plutôt qu'un écran mort
+      "boot.shell_on_fail" # a shell rather than a dead screen
     ];
 
     boot.supportedFilesystems = [
@@ -137,45 +141,44 @@ in
     ]
     ++ optional cfg.enableZfs "zfs";
 
-    # Avec ZFS dans l'image, le noyau doit être celui contre lequel le module
-    # ZFS a été construit — sinon la compilation du module échoue ou le pool
-    # n'est pas montable.
+    # With ZFS in the image, the kernel must be the one the ZFS module was built
+    # against — otherwise the module fails to build or the pool cannot be
+    # mounted.
     #
-    # On épingle une LTS explicite, et NON
-    # `config.boot.zfs.package.latestCompatibleLinuxPackages` : cette dernière
-    # est dépréciée et pointe désormais sur le noyau par défaut, donc elle ne
-    # garantit plus rien tout en en donnant l'illusion (constaté : noyau par
-    # défaut = 6.18.55 = linuxPackages_6_18). Avec un flake qui bump tous les
-    # mois, la dérive serait silencieuse jusqu'au jour où le module ZFS ne se
-    # compilerait plus. Une LTS explicite en fin de vie fait échouer
-    # l'évaluation : bruyant, donc réparable.
+    # We pin an explicit LTS, and NOT
+    # `config.boot.zfs.package.latestCompatibleLinuxPackages`: that one is
+    # deprecated and now points at the default kernel, so it guarantees nothing
+    # while giving the illusion that it does (observed: default kernel = 6.18.55
+    # = linuxPackages_6_18). With a flake that bumps every month, drift would be
+    # silent until the day the ZFS module no longer builds. An explicit LTS that
+    # reaches end of life fails evaluation instead: loud, therefore fixable.
     boot.kernelPackages = mkIf cfg.enableZfs pkgs.linuxPackages_6_18;
 
     # ── Licences ─────────────────────────────────────────────────────────────
-    # Implicite (défaut) mais on l'écrit, parce que c'est une règle du projet :
-    # tout ce qui est dans l'ISO doit pouvoir être redistribué. Corollaire :
-    # pas de memtest86-efi (édition Passmark), on garde memtest86plus (GPL).
+    # Implicit (default) but spelled out, because it is a project rule:
+    # everything inside the ISO must be redistributable. Corollary: no
+    # memtest86-efi (Passmark edition), we keep memtest86plus (GPL).
     nixpkgs.config.allowUnfree = false;
 
-    # ── Comptes ──────────────────────────────────────────────────────────────
-    # Le profil « installation device » met un mot de passe vide sur root et
-    # nixos et active l'autologin au terminal. C'est le comportement attendu
-    # d'un média live — mais il est documenté dans le README, pas caché.
+    # ── Accounts ─────────────────────────────────────────────────────────────
+    # The "installation device" profile sets an empty password on root and nixos
+    # and enables autologin on the terminal. That is the expected behaviour of a
+    # live medium — but it is documented in the README, not hidden.
     users.users.root.openssh.authorizedKeys.keys = cfg.authorizedKeys;
     users.users.nixos.openssh.authorizedKeys.keys = cfg.authorizedKeys;
 
     services.openssh = {
       enable = mkIf cfg.enableSsh true;
-      # Jamais d'authentification par mot de passe sur un artefact public.
+      # Never password authentication on a public artefact.
       settings.PermitRootLogin = mkForce "prohibit-password";
       settings.PasswordAuthentication = mkForce false;
     };
 
-    # ── Marqueur de disponibilité ────────────────────────────────────────────
-    # Sert au test de boot en CI : on écrit sur ttyS0 explicitement, pour ne
-    # pas dépendre de l'ordre des `console=` sur la ligne de commande.
+    # ── Readiness marker ─────────────────────────────────────────────────────
+    # Used by the CI boot test: we write to ttyS0 explicitly, so as not to
+    # depend on the order of the `console=` arguments on the command line.
     systemd.services.depannix-ready = {
-      description = "Annonce que Dépannix est prêt";
+      description = "Announce that Dépannix is ready";
       wantedBy = [ "multi-user.target" ];
       serviceConfig = {
         Type = "oneshot";

@@ -1,5 +1,5 @@
 {
-  description = "Dépannix — environnement de rescue NixOS : ISO minimale, reproductible et vérifiable";
+  description = "Dépannix — NixOS rescue environment: a minimal, reproducible and verifiable ISO";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
@@ -15,7 +15,7 @@
         "aarch64-linux"
       ];
 
-      # Version CalVer. Le bot mensuel la réécrit (voir .github/workflows/monthly.yml).
+      # CalVer version. The monthly bot rewrites it (see .github/workflows/monthly.yml).
       version = "2026.10";
 
       mkIso = system: extra: (lib.nixosSystem {
@@ -27,21 +27,21 @@
         ];
       }).config.system.build.isoImage;
 
-      # Saveur de référence : la plus petite, sans interface graphique.
-      # Compression zstd-19 : bon rapport taille/temps, contrairement à xz.
+      # Reference flavour: the smallest one, no graphical interface.
+      # zstd-19 compression: a good size/time trade-off, unlike xz.
       isoMinimal = system: mkIso system {
         depannix.squashfsCompression = "zstd -Xcompression-level 19";
       };
 
-      # Même contenu, compression rapide : pour itérer en local et pour le test
-      # de boot en CI (on ne paie pas 10 min de compression pour vérifier un boot).
+      # Same content, fast compression: to iterate locally and for the CI boot
+      # test (we do not pay 10 minutes of compression to check a boot).
       isoMinimalFast = system: mkIso system {
         depannix.squashfsCompression = "zstd -Xcompression-level 3";
       };
 
       pkgsFor = system: nixpkgs.legacyPackages.${system};
 
-      # Arguments QEMU communs, tirés du système cible.
+      # QEMU arguments, derived from the target system.
       qemuEnv = system:
         let
           pkgs = pkgsFor system;
@@ -56,7 +56,7 @@
           OVMF_FIRMWARE = "${pkgs.AAVMF.firmware}";
         };
 
-      # Lance l'ISO dans QEMU, en interactif (`nix run`) ou en test (`MARKER=`).
+      # Boot the ISO in QEMU, interactively (`nix run`) or as a test (`MARKER=`).
       mkRunVm = system:
         let
           pkgs = pkgsFor system;
@@ -65,8 +65,8 @@
         in
         pkgs.writeShellScriptBin "depannix-vm" ''
           set -euo pipefail
-          # ISO= déjà fourni par l'appelant (ex. une release à tester) : on ne
-          # l'écrase pas, sinon il est impossible de tester un ISO donné.
+          # ISO= already supplied by the caller (e.g. a release to test): we do
+          # not overwrite it, otherwise it is impossible to test a given ISO.
           export ISO="''${ISO:-$(find ${iso}/iso -name '*.iso' | head -1)}"
           export QEMU="${env.QEMU}"
           export MACHINE="${env.MACHINE}"
@@ -75,7 +75,7 @@
           exec ${pkgs.bash}/bin/bash ${./nix/qemu-run.sh}
         '';
 
-      # Test de boot : on attend un marqueur écrit sur la console série.
+      # Boot test: we wait for a marker written to the serial console.
       mkBootTest = system: mode:
         let
           pkgs = pkgsFor system;
@@ -84,7 +84,7 @@
         in
         pkgs.runCommand "depannix-boot-test-${mode}" {
           nativeBuildInputs = [ pkgs.qemu_kvm pkgs.bash ];
-          # mode « test » : marqueur attendu et délai borné
+          # test mode: expected marker and bounded timeout
           MARKER = "DEPANNIX_READY";
           TIMEOUT = "900";
           MODE = mode;
@@ -100,8 +100,8 @@
           echo "mode=$MODE" > $out/result
         '';
 
-      # Manifeste de composition : la liste exhaustive des chemins du store
-      # présents dans l'ISO, avec leur hachage. C'est la preuve vérifiable.
+      # Composition manifest: the exhaustive list of store paths present in the
+      # ISO, with their hash. This is the verifiable proof.
       mkClosureManifest = system:
         let
           pkgs = pkgsFor system;
@@ -115,8 +115,8 @@
         in
         pkgs.callPackage ./nix/closure-manifest.nix { inherit toplevel; };
 
-      # Garde-fou : l'ISO ne doit pas dériver en taille sans qu'on le voie.
-      # Budget 1800 MiB — la cible est ~1,3-1,5 GiB (firmware complet inclus).
+      # Guard rail: the ISO must not drift in size without anyone noticing.
+      # Budget 1800 MiB — the target is ~1.3-1.5 GiB (full firmware included).
       mkSizeBudget = system:
         let
           pkgs = pkgsFor system;
@@ -126,19 +126,19 @@
           iso="$(find ${iso}/iso -name '*.iso' | head -1)"
           size=$(stat -c%s "$iso")
           budget=$((1800 * 1024 * 1024))
-          printf 'taille=%s octets (%s MiB), budget=%s octets (%s MiB)\n' \
+          printf 'size=%s bytes (%s MiB), budget=%s bytes (%s MiB)\n' \
             "$size" "$((size / 1048576))" "$budget" "$((budget / 1048576))"
           if [ "$size" -gt "$budget" ]; then
-            echo "ÉCHEC : l'ISO dépasse le budget de taille." >&2
-            echo "Voir docs/budget.md — ajouter un outil sans mesurer sa closure est la cause habituelle." >&2
+            echo "FAIL: the ISO exceeds its size budget." >&2
+            echo "See docs/budget.md — adding a tool without measuring its closure is the usual cause." >&2
             exit 1
           fi
           echo "OK" > $out
         '';
     in
     {
-      # Le module réutilisable : c'est lui qui permet d'ajouter plus tard une
-      # entrée de boot « Dépannix » sur une machine installée.
+      # The reusable module: it is what will later allow adding a "Dépannix"
+      # boot entry to an installed machine.
       nixosModules.default = ./modules/default.nix;
       nixosModules.depannix = self.nixosModules.default;
 
@@ -162,9 +162,9 @@
       });
 
       checks = lib.genAttrs systems (system: {
-        # Bios + EFI : les deux chemins de firmware sont couverts.
-        # Attention : KVM est requis, sinon QEMU retombe en TCG et le test
-        # mettra des dizaines de minutes. Le workflow CI vérifie /dev/kvm.
+        # BIOS + EFI: both firmware paths are covered.
+        # Careful: KVM is required, otherwise QEMU falls back to TCG and the
+        # test takes tens of minutes. The CI workflow checks /dev/kvm.
         boot-test-bios = mkBootTest system "bios";
         boot-test-efi = mkBootTest system "efi";
         size-budget = mkSizeBudget system;

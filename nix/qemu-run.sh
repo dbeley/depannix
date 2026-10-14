@@ -1,20 +1,20 @@
 #!/usr/bin/env bash
-# Lance une ISO Dépannix dans QEMU.
+# Boot a Dépannix ISO in QEMU.
 #
-#   ISO=<chemin>            chemin de l'ISO (obligatoire)
-#   MODE=bios|efi           firmware de démarrage (défaut : bios)
-#   QEMU=/chemin/qemu-...   binaire QEMU (défaut : déduit)
-#   MACHINE=q35|virt        machine QEMU (défaut : q35)
-#   OVMF_FIRMWARE=...       firmware EFI (requis si MODE=efi)
+#   ISO=<path>              path to the ISO (required)
+#   MODE=bios|efi           boot firmware (default: bios)
+#   QEMU=/path/qemu-...     QEMU binary (default: detected)
+#   MACHINE=q35|virt        QEMU machine (default: q35)
+#   OVMF_FIRMWARE=...       EFI firmware (required when MODE=efi)
 #   MEM=3072  CPUS=2
 #
-# Sans MARKER  : QEMU est lancé en avant-plan, interactif (`nix run`).
-# Avec MARKER  : mode test — on attend la chaîne MARKER sur la console série,
-#                on tue QEMU dès qu'elle apparaît, et on sort en erreur si
-#                TIMEOUT secondes s'écoulent sans la voir.
+# Without MARKER : QEMU runs in the foreground, interactive (`nix run`).
+# With MARKER    : test mode — we wait for the MARKER string on the serial
+#                  console, kill QEMU as soon as it appears, and exit non-zero
+#                  if TIMEOUT seconds pass without seeing it.
 set -uo pipefail
 
-ISO="${ISO:?la variable ISO doit pointer sur une image a demarrer}"
+ISO="${ISO:?ISO must point to an image to boot}"
 MODE="${MODE:-bios}"
 MACHINE="${MACHINE:-q35}"
 MEM="${MEM:-3072}"
@@ -28,34 +28,34 @@ if [ -z "$QEMU" ]; then
     if command -v "$c" >/dev/null 2>&1; then QEMU="$(command -v "$c")"; break; fi
   done
 fi
-[ -n "$QEMU" ] || { echo "QEMU introuvable" >&2; exit 2; }
+[ -n "$QEMU" ] || { echo "QEMU not found" >&2; exit 2; }
 
 args=(
   -machine "$MACHINE"
   -m "$MEM"
   -smp "$CPUS"
-  -nographic # tout part sur la console série, ce qui rend le test observable
+  -nographic # everything goes to the serial console, which makes the test observable
   -no-reboot
   -cdrom "$ISO"
 )
 
-# KVM change tout : sans lui l'accélération est logicielle (TCG) et un boot
-# complet prend des dizaines de minutes au lieu de quelques dizaines de secondes.
+# KVM changes everything: without it, acceleration is software (TCG) and a full
+# boot takes tens of minutes instead of tens of seconds.
 if [ -w /dev/kvm ]; then
   args+=( -enable-kvm -cpu host )
-  echo "[qemu] KVM actif" >&2
+  echo "[qemu] KVM enabled" >&2
 else
   args+=( -cpu max )
-  echo "[qemu] KVM indisponible — émulation logicielle, ce sera lent" >&2
+  echo "[qemu] KVM unavailable — software emulation, this will be slow" >&2
 fi
 
 case "$MODE" in
   bios) ;;
   efi)
-    [ -n "${OVMF_FIRMWARE:-}" ] || { echo "OVMF_FIRMWARE requis en mode efi" >&2; exit 2; }
+    [ -n "${OVMF_FIRMWARE:-}" ] || { echo "OVMF_FIRMWARE required in efi mode" >&2; exit 2; }
     args+=( -drive "if=pflash,format=raw,readonly=on,file=$OVMF_FIRMWARE" )
     ;;
-  *) echo "MODE inconnu : $MODE" >&2; exit 2 ;;
+  *) echo "unknown MODE: $MODE" >&2; exit 2 ;;
 esac
 
 if [ -z "$MARKER" ]; then
@@ -81,11 +81,11 @@ kill -KILL "$qpid" 2>/dev/null
 wait "$qpid" 2>/dev/null
 
 if [ "$found" = 1 ]; then
-  echo "OK : marqueur « $MARKER » observé sur la console série (mode $MODE)"
+  echo "OK: marker \"$MARKER\" seen on the serial console (mode $MODE)"
   exit 0
 fi
 
-echo "ÉCHEC : marqueur « $MARKER » absent après ${TIMEOUT}s (mode $MODE)" >&2
-echo "--- 40 dernières lignes de $log ---" >&2
+echo "FAILURE: marker \"$MARKER\" not seen after ${TIMEOUT}s (mode $MODE)" >&2
+echo "--- last 40 lines of $log ---" >&2
 tail -40 "$log" >&2
 exit 1

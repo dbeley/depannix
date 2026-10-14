@@ -1,220 +1,229 @@
-# Décisions d'architecture
+# Architecture decisions
 
-Ce document explique les choix, y compris ceux qui coûtent, pour qu'ils ne
-soient pas rediscutés dans six mois sans contexte.
+This document explains the choices, including the ones that cost, so that they
+are not re-litigated in six months without context.
 
-## Pourquoi NixOS plutôt qu'un remaster Debian/Arch
+## Why NixOS rather than a Debian/Arch remaster
 
-La sélection d'outils n'est pas le problème : dans SystemRescue, Grml ou Hiren's,
-la liste est figée à la gravure. C'est ça qui vieillit mal. Avec NixOS :
+The selection of tools is not the problem: in SystemRescue, Grml or Hiren's,
+the list is frozen at burn time. That is what ages badly. With NixOS:
 
-- le catalogue s'étend à la demande (`nix shell nixpkgs#…`) sans reflasher ;
-- la composition de l'image est une valeur calculable, donc publiable ;
-- la mise à jour mensuelle est un `flake.lock` qui bouge, pas une reconstruction
-  à la main.
+- the catalog extends on demand (`nix shell nixpkgs#…`) without reflashing;
+- the composition of the image is a computable value, hence publishable;
+- the monthly update is a `flake.lock` that moves, not a manual rebuild.
 
-Contrepartie acceptée : une ISO de 1,42 GiB contre 1,29 GiB pour SystemRescue
-(chiffres mesurés, voir `docs/budget.md`), et l'obligation de désactiver Secure
+Accepted trade-off: a 1,42 GiB ISO against 1,29 GiB for SystemRescue
+(measured figures, see `docs/budget.md`), and the obligation to disable Secure
 Boot.
 
-## Pourquoi la copie de nixpkgs reste dans l'ISO
+## Why the nixpkgs copy stays in the ISO
 
-`profiles/installation-device.nix` embarque la source complète de nixpkgs
-(200 MiB de store), `stdenvNoCC`, `busybox` et `jq` (81 MiB) — mesuré, soit
-~281 MiB de store, une centaine de mégaoctets d'ISO. C'est délibéré : ça permet de
-**construire un paquet depuis les sources sans réseau**. Un média de dépannage
-qui suppose une machine saine est un contresens.
+`profiles/installation-device.nix` embeds the complete nixpkgs source
+(200 MiB of store), `stdenvNoCC`, `busybox` and `jq` (81 MiB) — measured, i.e.
+~281 MiB of store, about a hundred megabytes of ISO. This is deliberate: it
+makes it possible to **build a package from source without a network**. A rescue
+medium that assumes a healthy machine is a contradiction in terms.
 
-## Pourquoi le firmware redistribuable seulement
+## Why only redistributable firmware
 
-`installation-cd-base.nix` active `hardware.enableAllHardware`, qui embarque du
-firmware sous licence non redistribuable. On le force à `false` et on active
-`enableRedistributableFirmware`. C'est le socle de la règle n°2 : on publie la
-composition de l'image, donc tout ce qu'elle contient doit être redistribuable.
+`installation-cd-base.nix` enables `hardware.enableAllHardware`, which embeds
+firmware under a non-redistributable license. We force it to `false` and enable
+`enableRedistributableFirmware`. This is the foundation of rule no. 2: we
+publish the composition of the image, so everything it contains must be
+redistributable.
 
-Coût, **mesuré sur le manifeste de l'image réelle** et non sur une maquette : la
-closure fait 732 chemins pour 2467,7 MiB, dont 836,0 MiB de firmware, soit 34 %.
-Le plus gros poste isolé est `linux-firmware-20260916-zstd` à 809,5 MiB.
+Cost, **measured on the manifest of the real image** and not on a mock-up: the
+closure is 732 paths for 2467,7 MiB, of which 836,0 MiB is firmware, i.e. 34%.
+The largest single item is `linux-firmware-20260916-zstd` at 809,5 MiB.
 
-Correction de méthode au passage : le chiffre de 1884 MiB qui figurait ici venait
-du paquet `linux-firmware` **monolithique**, alors que l'image embarque la variante
-`-zstd`, nettement plus légère — et il ignorait les 546 autres chemins du système
-(systemd, outils Nix, pile Perl, Python, git). Le firmware reste le premier poste
-de dépense, mais à 34 % du total et non 70 % : c'est la hiérarchie des priorités
-qui était fausse, pas seulement le montant.
+A method correction along the way: the figure of 1884 MiB that appeared here came
+from the **monolithic** `linux-firmware` package, whereas the image embeds the
+`-zstd` variant, which is markedly lighter — and it ignored the 546 other paths
+in the system (systemd, Nix tools, the Perl stack, Python, git). Firmware remains
+the largest line item, but at 34% of the total and not 70%: it was the hierarchy
+of priorities that was wrong, not just the amount.
 
-## Pourquoi pas d'interface graphique en v1
+## Why no graphical interface in v1
 
-Deux raisons, chiffrées et non esthétiques :
+Two reasons, quantified rather than aesthetic:
 
-- `nautilus` seul = 1162 MiB de closure, `gparted` = 385 MiB, `gsmartcontrol` =
-  317 MiB. L'ISO graphique officielle de NixOS pèse 3574 MiB contre 1533 MiB pour
-  la minimale.
-- GNOME Files monte automatiquement tout ce qu'on branche. En récupération de
-  données ou en forensique, c'est exactement le geste qui écrit sur le système
-  qu'on essaie de sauver.
+- `nautilus` alone = 1162 MiB of closure, `gparted` = 385 MiB, `gsmartcontrol` =
+  317 MiB. The official NixOS graphical ISO weighs 3574 MiB against 1533 MiB for
+  the minimal one.
+- GNOME Files automatically mounts anything that is plugged in. In data recovery
+  or forensics, that is exactly the gesture that writes to the system we are
+  trying to save.
 
-Si une saveur graphique arrive, elle devra embarquer une politique d'automount
-désactivée et une entrée de boot dédiée.
+If a graphical flavor arrives, it will have to embed a policy with automount
+disabled and a dedicated boot entry.
 
-## Récupéré de `n8henrie/nixos-rescue` — et jeté
+## Salvaged from `n8henrie/nixos-rescue` — and thrown away
 
-Le projet est inactif depuis trois ans, mais deux choses valent la reprise :
+The project has been inactive for three years, but two things are worth
+reusing:
 
-- **La structure du flake** : `nixosModules.default` + `packages.default` +
-  une app qui démarre l'image en VM. Le module réutilisable permet d'ajouter plus
-  tard une entrée de boot « Dépannix » sur une machine installée.
-- **Le harnais QEMU** (`graphics = false`, disque en cdrom lecture seule, port
-  forwardé) et deux paramètres noyau qui changent tout : `boot.shell_on_fail` et
-  `console=ttyS0` — c'est ce dernier qui rend le test de boot automatisé possible.
-  Son `memorySize = 2048` est trop juste pour une ISO de ~1,4 GiB avec
-  `copytoram` : passé à 3072.
-- **L'intention de `boot.kernelPackages = zfs.latestCompatibleLinuxPackages`** :
-  faire coller le module ZFS et le noyau. L'intention est juste, l'expression ne
-  l'est plus — voir « La décision ZFS / noyau ».
-- **`boot.supportedFilesystems` étendu** : on ajoute `bcachefs`, `f2fs`,
+- **The flake structure**: `nixosModules.default` + `packages.default` +
+  an app that boots the image in a VM. The reusable module makes it possible to
+  later add a "Dépannix" boot entry on an installed machine.
+- **The QEMU harness** (`graphics = false`, read-only cdrom disk, port
+  forwarded) and two kernel parameters that change everything: `boot.shell_on_fail`
+  and `console=ttyS0` — it is the latter that makes the automated boot test
+  possible. Its `memorySize = 2048` is too tight for an ISO of ~1,4 GiB with
+  `copytoram`: raised to 3072.
+- **The intent behind `boot.kernelPackages = zfs.latestCompatibleLinuxPackages`**:
+  to make the ZFS module and the kernel match up. The intent is right, the
+  expression no longer is — see "The ZFS / kernel decision".
+- **Extended `boot.supportedFilesystems`**: we add `bcachefs`, `f2fs`,
   `nilfs2`, `jfs`.
 
-Jeté :
+Thrown away:
 
-- `nixpkgs/nixos-22.11` (la cause du vieillissement) ;
-- `nixpkgs.config.allowUnfree = true` — incompatible avec un artefact public dont
-  on publie la composition ;
-- `users.users.root.password = "rescue"` en clair, et surtout
-  `authorizedKeys.keyFiles = fetchurl github.com/n8henrie.keys` : une clé
-  personnelle bakée dans un artefact public. Ici, `depannix.authorizedKeys` est
-  vide par défaut ;
-- `binfmt.emulatedSystems = [ "aarch64-linux" ]` : embarquait QEMU user pour
-  émuler arm64. Devenu inutile avec les runners arm64 natifs ;
-- sa liste de paquets, trop maigre : ni `testdisk`/`photorec`, ni `lshw`, ni
-  `dmidecode`, ni `fsarchiver`, ni `nwipe`, ni `nvme-cli`, ni ZFS explicite.
+- `nixpkgs/nixos-22.11` (the cause of the aging);
+- `nixpkgs.config.allowUnfree = true` — incompatible with a public artifact whose
+  composition we publish;
+- `users.users.root.password = "rescue"` in cleartext, and above all
+  `authorizedKeys.keyFiles = fetchurl github.com/n8henrie.keys`: a personal key
+  baked into a public artifact. Here, `depannix.authorizedKeys` is empty by
+  default;
+- `binfmt.emulatedSystems = [ "aarch64-linux" ]`: embedded QEMU user to emulate
+  arm64. Now useless with native arm64 runners;
+- its package list, too sparse: neither `testdisk`/`photorec`, nor `lshw`, nor
+  `dmidecode`, nor `fsarchiver`, nor `nwipe`, nor `nvme-cli`, nor explicit ZFS.
 
-## La décision ZFS / noyau
+## The ZFS / kernel decision
 
-Embarquer ZFS impose un noyau contre lequel le module ZFS est construit, donc un
-noyau LTS plutôt que le tout dernier. C'est un arbitrage contre le support du
-matériel le plus récent. Il est assumé : ZFS est un différenciateur réel face à
-SystemRescue, qui l'exclut pour raisons de licence, et le module NixOS en est un
-utilisateur naturel. Pour la machine neuve au matériel inconnu, `nomodeset` et le
-firmware complet couvrent l'essentiel.
+Embedding ZFS imposes a kernel against which the ZFS module is built, hence an
+LTS kernel rather than the very latest. This is a trade-off against support for
+the most recent hardware. It is made deliberately: ZFS is a real differentiator
+against SystemRescue, which excludes it for licensing reasons, and the NixOS
+module is a natural user of it. For the new machine with unknown hardware,
+`nomodeset` and the complete firmware cover the essentials.
 
-**Ce que la construction a révélé.** L'expression héritée est dépréciée. nixpkgs
-émet désormais :
+**What the build revealed.** The inherited expression is deprecated. nixpkgs
+now emits:
 
 > `zfs.latestCompatibleLinuxPackages is deprecated and is now pointing at the`
 > `default kernel.`
 
-Mesuré : le noyau par défaut *est* 6.18.55, soit exactement
-`linuxPackages_6_18`. Autrement dit, l'expression produisait le même résultat que
-« ne rien écrire », tout en donnant l'illusion d'une garantie. Avec un
-`flake.lock` qui bouge tous les mois, la dérive aurait été silencieuse jusqu'au
-jour où le module ZFS cesse de compiler.
+Measured: the default kernel *is* 6.18.55, i.e. exactly
+`linuxPackages_6_18`. In other words, the expression produced the same result as
+"writing nothing", while giving the illusion of a guarantee. With a
+`flake.lock` that moves every month, the drift would have been silent until the
+day the ZFS module stops compiling.
 
-On épingle donc explicitement `pkgs.linuxPackages_6_18`. Une LTS en fin de vie
-fait échouer l'évaluation — bruyant, donc réparable — au lieu de dériver sans
-rien dire. C'est l'inverse du choix fait partout ailleurs dans le projet, où l'on
-suit `nixos-unstable` : ici, suivre le défaut n'est pas neutre, c'est précisément
-perdre la propriété qu'on cherchait.
+We therefore pin `pkgs.linuxPackages_6_18` explicitly. An LTS at end of life
+makes the evaluation fail — loud, hence repairable — instead of drifting without
+saying anything. This is the opposite of the choice made everywhere else in the
+project, where we follow `nixos-unstable`: here, following the default is not
+neutral, it is precisely losing the property we were after.
 
-## Contraintes CI, vérifiées
+## CI constraints, verified
 
-| Point | Constat |
+| Point | Finding |
 |---|---|
-| Runners x86_64 | 4 vCPU / 16 Go / 14 Go de SSD, gratuits et illimités sur repo public |
-| `/dev/kvm` sur x86_64 | **présent** sur les runners standard, mais non documenté. Nécessite une règle udev (`static_node=kvm`, l'utilisateur du runner n'est pas dans le groupe `kvm`) et l'installation de `qemu-system-x86`, absent de l'image |
-| `/dev/kvm` sur arm64 | **absent à tous les niveaux** — limitation du SKU Azure ARM, pas de l'image. Le test de boot aarch64 reste donc manuel |
-| Disque | ~2,7 GiB de store + squashfs + ISO ≈ 5 GiB : large dans les 14 Go |
-| Cache binaire | `magic-nix-cache-action` a été abandonné en février 2025 puis ressuscité — on ne bâtit pas dessus. Cachix est le choix durable, non configuré en v0.1 |
+| x86_64 runners | 4 vCPU / 16 GB / 14 GB of SSD, free and unlimited on public repo |
+| `/dev/kvm` on x86_64 | **present** on the standard runners, but undocumented. Requires a udev rule (`static_node=kvm`, the runner user is not in the `kvm` group) and installing `qemu-system-x86`, absent from the image |
+| `/dev/kvm` on arm64 | **absent at every level** — a limitation of the Azure ARM SKU, not of the image. The aarch64 boot test therefore remains manual |
+| Disk | ~2,7 GiB of store + squashfs + ISO ≈ 5 GiB: ample within the 14 GB |
+| Binary cache | `magic-nix-cache-action` was abandoned in February 2025 then resurrected — we do not build on it. Cachix is the durable choice, not configured in v0.1 |
 
-Le workflow échoue explicitement si `/dev/kvm` est absent : sans ce garde-fou,
-QEMU retombe silencieusement en émulation logicielle et le job expire au lieu
-d'échouer.
+The workflow fails explicitly if `/dev/kvm` is absent: without this guard rail,
+QEMU silently falls back to software emulation and the job times out instead of
+failing.
 
-**Piège découvert à l'exécution, un cran plus bas.** Ce garde-fou ne suffisait
-pas. Le test de boot est un `nix build`, donc il s'exécute dans le **bac à sable
-Nix**, qui n'expose pas `/dev/kvm` aux constructions. Le runner avait beau
-l'activer, le QEMU du test ne le voyait pas et retombait en émulation — soit
-exactement la panne que le garde-fou prétendait empêcher, mais placée sous lui.
-Il faut injecter le périphérique dans le bac à sable :
+**Pitfall discovered at runtime, one level lower.** This guard rail was not
+enough. The boot test is a `nix build`, so it runs inside the **Nix sandbox**,
+which does not expose `/dev/kvm` to builds. The runner might well enable it, but
+the test's QEMU did not see it and fell back to emulation — exactly the failure
+the guard rail claimed to prevent, but located beneath it.
+The device must be injected into the sandbox:
 
 ```bash
 nix build --option extra-sandbox-paths /dev/kvm .#checks.<system>.boot-test-bios
 ```
 
-Vérifié : le journal de construction affiche `[qemu] KVM actif` **dans** le bac à
-sable.
+Verified: the build log shows `[qemu] KVM active` **inside** the sandbox.
 
-## Le marqueur de boot
+## The boot marker
 
-Le test de boot ne peut pas se contenter de « QEMU a démarré ». Une unité systemd
-`depannix-ready` écrit `DEPANNIX_READY` sur `/dev/ttyS0` explicitement — pas via
-`/dev/console`, dont la destination dépend de l'ordre des `console=` sur la ligne
-de commande. C'est aussi la manière la plus simple de prouver que le système est
-réellement arrivé au multi-utilisateur.
+The boot test cannot settle for "QEMU started". A systemd unit
+`depannix-ready` writes `DEPANNIX_READY` to `/dev/ttyS0` explicitly — not via
+`/dev/console`, whose destination depends on the order of the `console=` entries
+on the command line. This is also the simplest way to prove that the system has
+actually reached multi-user.
 
-## La console série, et pourquoi elle était muette
+## The serial console, and why it was silent
 
-Diagnostic instructif. Le marqueur apparaissait bien, mais `serial.log` ne
-contenait que 20 lignes : un échec de démarrage aurait donc été indiagnosticable
-en CI. La cause n'était ni `quiet`, ni un `console=` manquant. C'est la ligne de
-commande **réellement gravée dans l'ISO** qui l'a dit :
+An instructive diagnosis. The marker did appear, but `serial.log` contained only
+20 lines: a boot failure would therefore have been undiagnosable in CI. The cause
+was neither `quiet` nor a missing `console=`. It was the command line **actually
+burned into the ISO** that revealed it:
 
 ```
 init=… console=ttyS0,115200 console=tty1 boot.shell_on_fail nohibernate root=fstab loglevel=4 lsm=landlock,yama,bpf
 ```
 
-`loglevel=4` est ajouté par nixpkgs **après** les `boot.kernelParams`. Écrire
-`loglevel=7` dans `boot.kernelParams` n'aurait donc rien changé : la valeur
-ajoutée en dernier l'emporte. Le levier correct est l'option dédiée
-`boot.consoleLogLevel`, insérée à la bonne place.
+`loglevel=4` is added by nixpkgs **after** the `boot.kernelParams`. Writing
+`loglevel=7` in `boot.kernelParams` would therefore have changed nothing: the
+value added last wins. The correct lever is the dedicated
+`boot.consoleLogLevel` option, inserted in the right place.
 
-Leçon générale : quand une option ne produit pas l'effet attendu dans un
-assemblage, lire l'artefact final plutôt que la source. Un `grep` sur l'ISO a
-tranché en une commande ce que la lecture des modules nixpkgs n'avait pas donné.
+General lesson: when an option does not produce the expected effect in an
+assembly, read the final artifact rather than the source. A `grep` on the ISO
+settled in one command what reading the nixpkgs modules had not yielded.
 
-## Reproductibilité : mesurée, pas supposée
+## Reproducibility: measured, not assumed
 
-La promesse du projet tient à ceci : un tiers doit pouvoir reconstruire l'image et
-obtenir exactement la même. C'est mesuré, sur deux environnements volontairement
-dissemblables.
+The project's promise rests on this: a third party must be able to rebuild the
+image and obtain exactly the same one. This is measured, across two deliberately
+dissimilar environments.
 
-| | Machine de développement | Runner GitHub |
+| | Development machine | GitHub runner |
 |---|---|---|
-| cœurs | 2 vCPU | 4 vCPU |
-| store | déjà peuplé | téléchargé intégralement |
-| révision nixpkgs | `7fd4004d` (`flake.lock`) | idem |
-| secteurs de l'ISO | 744 016 | 744 016 |
-| sha256 | `943614f5…d4728a` | `943614f5…d4728a` |
+| cores | 2 vCPU | 4 vCPU |
+| Nix implementation | upstream Nix 2.35.2 | Determinate Nix |
+| store | already populated | downloaded in full |
+| nixpkgs revision | `7fd4004d` (`flake.lock`) | same |
+| ISO sectors | 744 016 | 744 016 |
+| sha256 | `85d2355b…10e355` | `85d2355b…10e355` |
 
-Même hachage des deux côtés. Trois remarques sur ce qui le rend possible, dont
-une seule est réellement vérifiée :
+The row that matters most is the second one: the two sides do not even run the
+same Nix **implementation**. CI installs Determinate Nix (the
+`nix-installer-action` default — its log says `Installing Determinate Nix using
+the --determinate flag`), while the development host runs upstream Nix 2.35.2
+from nixpkgs, with no `determinate-nixd` anywhere. The bytes come out identical
+anyway. Reproducibility here does not rest on using the same tooling: it rests on
+a pinned nixpkgs revision and on derivations that do not depend on which Nix
+built them.
 
-- `flake.lock` versionné, donc la même révision de nixpkgs des deux côtés
-  (vérifié : c'est bien la même).
-- `SOURCE_DATE_EPOCH` figé dans la recette — c'est le levier standard, mais je
-  n'ai pas disséqué la chaîne `mksquashfs`/`xorriso` de nixpkgs pour confirmer
-  que c'est bien lui qui neutralise les horodatages. À ne pas présenter comme
-  établi.
-- Deux machines ne font pas une loi. Le résultat est solide parce que les
-  environnements diffèrent sur plusieurs axes à la fois (store vide contre
-  peuplé, 4 contre 2 cœurs), pas parce qu'il a été répété cent fois.
+Three remarks on what makes it possible, of which only one is actually verified:
 
-La conséquence pratique est nette : l'attestation de provenance produite par la CI
-désigne le même objet que le build local. Ce ne sont pas deux artefacts
-« équivalents » — c'est un seul artefact, produit deux fois.
+- Versioned `flake.lock`, hence the same nixpkgs revision on both sides
+  (verified: it is indeed the same).
+- `SOURCE_DATE_EPOCH` pinned in the recipe — this is the standard lever, but I
+  have not dissected the `mksquashfs`/`xorriso` chain in nixpkgs to confirm
+  that it is indeed what neutralizes the timestamps. Not to be presented as
+  established.
+- Two machines do not make a law. The result is solid because the environments
+  differ along several axes at once (empty versus populated store, 4 versus 2
+  cores), not because it was repeated a hundred times.
 
-## Points ouverts
+The practical consequence is clear: the provenance attestation produced by the CI
+designates the same object as the local build. These are not two "equivalent"
+artifacts — it is a single artifact, produced twice.
 
-- `boot.zfs.forceImportRoot` : par défaut, le système live peut importer les pools
-  ZFS de la machine dépannée. Sur un média de récupération, un import automatique
-  en écriture mérite d'être examiné de près.
-- Ordre `console=ttyS0` puis `console=tty1` : mesuré, le **dernier** `console=`
-  emporte `/dev/console`, donc il pointe sur `tty1` (l'écran). Conséquence : en
-  cas d'échec, le shell de secours de `boot.shell_on_fail` s'affiche sur l'écran
-  et **pas** sur la série, donc invisible dans le journal de la CI. À trancher :
-  accepter un journal série bavard mais sans shell de secours, ou inverser
-  l'ordre pour la machine sans écran.
-- Reproductibilité bit-à-bit : **tranchée**, voir la section ci-dessus.
-- `isoImage.forceTextMode` et les entrées de boot additionnelles (`copytoram`,
-  mode forensic) ne sont pas encore câblées.
-- Test de boot aarch64 : manuel, faute de `/dev/kvm` sur les runners ARM.
+## Open points
+
+- `boot.zfs.forceImportRoot`: by default, the live system can import the ZFS
+  pools of the machine being rescued. On a recovery medium, an automatic
+  writable import deserves close examination.
+- Order `console=ttyS0` then `console=tty1`: measured, the **last** `console=`
+  wins `/dev/console`, so it points at `tty1` (the screen). Consequence: in the
+  event of failure, the rescue shell of `boot.shell_on_fail` shows on the screen
+  and **not** on the serial line, hence invisible in the CI log. To be decided:
+  accept a verbose serial log but without a rescue shell, or reverse the order
+  for the machine with no screen.
+- Bit-for-bit reproducibility: **settled**, see the section above.
+- `isoImage.forceTextMode` and the additional boot entries (`copytoram`,
+  forensic mode) are not yet wired up.
+- aarch64 boot test: manual, for lack of `/dev/kvm` on the ARM runners.
