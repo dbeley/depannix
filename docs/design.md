@@ -181,20 +181,22 @@ dissimilar environments.
 | | Development machine | GitHub runner |
 |---|---|---|
 | cores | 2 vCPU | 4 vCPU |
-| Nix implementation | upstream Nix 2.35.2 | Determinate Nix |
+| Nix implementation | upstream Nix 2.35.2 | upstream Nix 2.35.2 |
 | store | already populated | downloaded in full |
 | nixpkgs revision | `7fd4004d` (`flake.lock`) | same |
 | ISO sectors | 744 016 | 744 016 |
 | sha256 | `85d2355b…10e355` | `85d2355b…10e355` |
 
-The row that matters most is the second one: the two sides do not even run the
-same Nix **implementation**. CI installs Determinate Nix (the
-`nix-installer-action` default — its log says `Installing Determinate Nix using
-the --determinate flag`), while the development host runs upstream Nix 2.35.2
-from nixpkgs, with no `determinate-nixd` anywhere. The bytes come out identical
-anyway. Reproducibility here does not rest on using the same tooling: it rests on
-a pinned nixpkgs revision and on derivations that do not depend on which Nix
-built them.
+Earlier runs are more interesting on the `Nix implementation` row. While CI still
+installed Determinate Nix — the `nix-installer-action` default, whose log then
+said `Installing Determinate Nix using the --determinate flag` — the development
+host already ran upstream Nix 2.35.2 from nixpkgs, with no `determinate-nixd`
+anywhere. The bytes came out identical anyway (`943614f5…d4728a` at the time).
+CI now installs upstream Nix too, and that switch did not change the hash either:
+`85d2355b…10e355` on both sides. So the same artifact survived a change of Nix
+implementation on one side. Reproducibility here does not rest on using the same
+tooling: it rests on a pinned nixpkgs revision and on derivations that do not
+depend on which Nix built them.
 
 Three remarks on what makes it possible, of which only one is actually verified:
 
