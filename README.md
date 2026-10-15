@@ -4,20 +4,36 @@ A NixOS rescue environment, built as a minimal, reproducible and verifiable ISO.
 A medium you can extend on demand without reflashing it, and whose exact
 composition you can publish.
 
-**Status: the ISO builds and boots.** Built end to end, tested in BIOS and EFI
-under KVM, composition verified against `cache.nixos.org`. No release published
-yet: the first one will come out of CI.
+**Status: the first release is published.**
+[`v2026.10`](https://github.com/dbeley/depannix/releases/tag/v2026.10) was built
+end to end by CI, tested in BIOS and EFI under KVM, its composition verified
+against `cache.nixos.org`. The release is unsigned: no minisign key is configured
+yet.
 
 | | |
 |---|---|
-| ISO | 1453,2 MiB (1,419 GiB) |
-| embedded store | 732 paths, 2467,7 MiB |
+| ISO | 1453.2 MiB (1.419 GiB) |
+| embedded store | 732 paths, 2467.7 MiB |
 | hashes confirmed by `cache.nixos.org` | 685 out of 732, zero divergence |
 | reproducibility | bit-for-bit, verified on two distinct machines |
 | CI | green, x86_64 and aarch64 (boot tested on x86_64) |
 | repository | https://github.com/dbeley/depannix |
 
 The recipe for verifying it yourself is further down in this file.
+
+## Download
+
+[`v2026.10`](https://github.com/dbeley/depannix/releases/tag/v2026.10) — x86_64
+and aarch64, plus the composition manifest. Write it to a USB stick with `dd`
+(further down), never to a partition.
+
+```bash
+sha256sum -c SHA256SUMS
+gh attestation verify depannix-minimal-2026.10-x86_64-linux.iso --repo dbeley/depannix
+```
+
+`gh attestation verify` exits 0 when the attestation is found and valid, and 1
+with an HTTP 404 when the file has none.
 
 ## Getting started
 
@@ -50,7 +66,7 @@ catalogue isn't fixed at burn time**. A NixOS ISO ships a copy of nixpkgs and
 `stdenv`, so on a machine you're rescuing that still has connectivity:
 
 ```bash
-nix shell nixpkgs#outil-quelconque    # any of the ~100 000 packages
+nix shell nixpkgs#outil-quelconque    # any of the ~100,000 packages
 ```
 
 That's why 281 MiB of store is deliberately spent on a copy of nixpkgs +
@@ -79,10 +95,11 @@ trusting whoever produced it.
 |---|---|
 | `flake.lock` (versioned) | the exact nixpkgs revision, and therefore the whole dependency tree |
 | `closure-manifest` | the exhaustive list of embedded store paths + their hashes |
-| `SHA256SUMS` + minisign signature | the published ISO is indeed the one that was built |
+| `SHA256SUMS` | the published ISO is the one whose bytes were measured |
+| minisign signature | that nobody altered it after the fact — **not configured yet** |
 | provenance attestation (CI) | the artifact came out of this workflow, on this commit |
 
-Verification, from weakest to strongest:
+Verification:
 
 ```bash
 # 1. the ISO is intact
@@ -98,6 +115,9 @@ done
 
 # 3. you can rebuild the exact same system
 git checkout <tag> && nix build .#minimal
+
+# 4. the artifact came out of this workflow, on this commit (needs gh)
+gh attestation verify depannix-minimal-2026.10-x86_64-linux.iso --repo dbeley/depannix
 ```
 
 Measured on the 2026.10 image: **685 of the 732 paths** are confirmed identical
@@ -109,7 +129,7 @@ The bit-for-bit reproducibility of the ISO is **established**, and it is the
 most important result of the project. The same revision, built on the GitHub
 runner (4 vCPU, store downloaded in full) and on a NixOS machine (2 vCPU, store
 already populated), produces the **same hash** `85d2355b…10e355` and the **same
-sector count** (744 016). Two distinct environments, a single artifact: a third
+sector count** (744,016). Two distinct environments, a single artifact: a third
 party can therefore rebuild the image and compare it to ours.
 
 Two successive builds of the manifest likewise produced the same digests
@@ -117,10 +137,12 @@ Two successive builds of the manifest likewise produced the same digests
 
 ## Known limitations
 
+- **Unsigned release.** No minisign key is configured yet, so `SHA256SUMS` ships
+  without a signature; the provenance attestation is the available alternative.
 - **Secure Boot: must be disabled.** The ISO isn't signed. This is the main gap
   compared to Parted Magic, and a project in its own right (signed shim, MOK
   enrollment).
-- **No graphical interface** in v1. A deliberate choice: GNOME costs ~1,1 GiB of
+- **No graphical interface** in v1. A deliberate choice: GNOME costs ~1.1 GiB of
   store for `nautilus` alone, and automatic disk mounting is precisely what you
   must not have during data recovery.
 - **No persistence.** In v1, anything installed during a session disappears on
@@ -137,10 +159,10 @@ Two successive builds of the manifest likewise produced the same digests
 
 - **v0.1 — done.** Minimal flavor, ISO built end to end, boot tested in BIOS and
   EFI, composition manifest verified, size and boot guardrails in CI.
-- **v0.2 — in progress.** CI is green on both architectures and the ISO rebuilds
-  identically on another machine. What remains is the signed release (minisign
-  key to create, unencrypted: minisign doesn't read a password from the
-  environment) and the `aarch64` boot test, to be done by hand.
+- **v0.2 — in progress.** CI is green on both architectures, the ISO rebuilds
+  identically on another machine, and `v2026.10` is published. What remains is the
+  signed release (minisign key to create, unencrypted: minisign doesn't read a
+  password from the environment) and the `aarch64` boot test, to be done by hand.
 - **v0.3** — automatic monthly release, blocking size budget and boot test.
 - **v1.0** — complete verification documentation.
 - **v2** — persistence, then possibly a graphical flavor.

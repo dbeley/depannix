@@ -25,18 +25,18 @@ Measured on the ISO manifest, therefore on the artifact itself.
 
 | Line item | Store | Paths |
 |---|---|---|
-| Firmware (11 packages) | **836,4 MiB** | 11 |
-| of which `linux-firmware-20260916-zstd` | 809,5 MiB | 1 |
-| Kernel modules | 145,2 MiB | 1 |
-| nixpkgs copy (`nixos-26.11…`) | 200,0 MiB | 1 |
-| `python3-3.14.7` | 136,6 MiB | 1 |
-| `systemd-261.3` | 63,0 MiB | 1 |
-| `git-2.55.0` | 56,5 MiB | 1 |
-| `vim-9.2.1001` | 43,6 MiB | 1 |
+| Firmware (11 packages) | **836.4 MiB** | 11 |
+| of which `linux-firmware-20260916-zstd` | 809.5 MiB | 1 |
+| Kernel modules | 145.2 MiB | 1 |
+| nixpkgs copy (`nixos-26.11…`) | 200.0 MiB | 1 |
+| `python3-3.14.7` | 136.6 MiB | 1 |
+| `systemd-261.3` | 63.0 MiB | 1 |
+| `git-2.55.0` | 56.5 MiB | 1 |
+| `vim-9.2.1001` | 43.6 MiB | 1 |
 | everything else (716 paths) | ~986 MiB | 716 |
-| **Total** | **2467,7 MiB** (2,41 GiB) | **732** |
+| **Total** | **2467.7 MiB** (2.41 GiB) | **732** |
 
-**Firmware accounts for 34 % of the total**, not 70 %. It is the largest single
+**Firmware accounts for 34% of the total**, not 70%. It is the largest single
 line item, but it does not dominate the discussion as much as was believed — see
 the correction below. The other 716 paths, which include all the system's
 plumbing (systemd, the Nix stack, Python, Perl, git, vim), weigh on their own
@@ -44,20 +44,20 @@ more than twice the firmware.
 
 ## What the real measurement corrected
 
-The previous version of this document stated **186 paths / 2675,6 MiB** with
-firmware at 70 %. Both figures were wrong, and for two distinct reasons:
+The previous version of this document stated **186 paths / 2675.6 MiB** with
+firmware at 70%. Both figures were wrong, and for two distinct reasons:
 
 - **Firmware was overestimated.** The figure of 1884 MiB applied to the
   **monolithic** `linux-firmware` package, whereas the image ships the
-  `-zstd` variant, at 809,5 MiB. The error factor is 2,3.
+  `-zstd` variant, at 809.5 MiB. The error factor is 2.3.
 - **The system was underestimated.** The 186 paths were the union of the
   components *explicitly chosen* (firmware, kernel, listed tools). The real
   closure counts 732: the other 546 come from the `installation-cd-base`
   profile — systemd, the Nix tools, `git`'s Perl stack, Python, vim,
   `nixos-rebuild`.
 
-The total therefore happened to be roughly right (2675,6 versus 2467,7 MiB, an
-8 % discrepancy) while **its composition was wrong**. This is the worst case: a
+The total therefore happened to be roughly right (2675.6 versus 2467.7 MiB, an
+8% discrepancy) while **its composition was wrong**. This is the worst case: a
 figure that looks good and sends decisions in the wrong direction. The lesson is
 that the only measurement that counts is that of the artifact, never that of a
 model of the artifact.
@@ -70,21 +70,21 @@ troubleshooting line items, to be enabled knowingly —
 
 | Tool | Store | Paths |
 |---|---|---|
-| `fd` | 50,9 MiB | 7 |
-| `fzf` | 50,1 MiB | 11 |
-| `ripgrep` | 55,7 MiB | 8 |
-| `eza` | 62,4 MiB | 13 |
-| `bat` | 72,5 MiB | 16 |
-| `hwinfo` | 135,3 MiB | 27 |
-| `inxi` | 140,0 MiB | 35 |
-| `neovim` | 261,7 MiB | 115 |
-| `fish` | 309,4 MiB | 45 |
-| `gsmartcontrol` | 317,2 MiB | 112 |
-| `gparted` | 385,1 MiB | 132 |
-| `phoronix-test-suite` | 606,0 MiB | 139 |
-| `guymager` | 2539,6 MiB | 259 |
+| `fd` | 50.9 MiB | 7 |
+| `fzf` | 50.1 MiB | 11 |
+| `ripgrep` | 55.7 MiB | 8 |
+| `eza` | 62.4 MiB | 13 |
+| `bat` | 72.5 MiB | 16 |
+| `hwinfo` | 135.3 MiB | 27 |
+| `inxi` | 140.0 MiB | 35 |
+| `neovim` | 261.7 MiB | 115 |
+| `fish` | 309.4 MiB | 45 |
+| `gsmartcontrol` | 317.2 MiB | 112 |
+| `gparted` | 385.1 MiB | 132 |
+| `phoronix-test-suite` | 606.0 MiB | 139 |
+| `guymager` | 2539.6 MiB | 259 |
 
-`guymager` (2,5 GiB of closure) illustrates the trap: an “obvious” tool for a
+`guymager` (2.5 GiB of closure) illustrates the trap: an “obvious” tool for a
 recovery medium costs on its own as much as everything else, because it bundles
 the Qt stack. `gparted` and `gsmartcontrol` pay the same toll (graphical
 interface) — which is why the `minimal` flavour does not ship them and relies on
@@ -92,16 +92,16 @@ interface) — which is why the `minimal` flavour does not ship them and relies 
 
 ## Measured ISO size (2026.10)
 
-**1453,2 MiB (1,419 GiB).**
+**1453.2 MiB (1.419 GiB).**
 
 | | |
 |---|---|
-| bytes | 1 523 744 768 |
-| MiB / GiB | 1453,2 / 1,419 |
+| bytes | 1,523,744,768 |
+| MiB / GiB | 1453.2 / 1.419 |
 | sha256 | `85d2355bda8bff04d59c1995ed07a98bd0142528b1fd14d25bd6bccfa810e355` |
 | compression | squashfs, `zstd -Xcompression-level 19`, 2 processors |
 | compression time | ~14 min on 2 vCPU |
-| store → ISO ratio | 2467,7 MiB → 1453,2 MiB, i.e. **59 %** |
+| store → ISO ratio | 2467.7 MiB → 1453.2 MiB, i.e. **59%** |
 
 Context benchmarks:
 

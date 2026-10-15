@@ -12,7 +12,7 @@ the list is frozen at burn time. That is what ages badly. With NixOS:
 - the composition of the image is a computable value, hence publishable;
 - the monthly update is a `flake.lock` that moves, not a manual rebuild.
 
-Accepted trade-off: a 1,42 GiB ISO against 1,29 GiB for SystemRescue
+Accepted trade-off: a 1.42 GiB ISO against 1.29 GiB for SystemRescue
 (measured figures, see `docs/budget.md`), and the obligation to disable Secure
 Boot.
 
@@ -33,8 +33,8 @@ publish the composition of the image, so everything it contains must be
 redistributable.
 
 Cost, **measured on the manifest of the real image** and not on a mock-up: the
-closure is 732 paths for 2467,7 MiB, of which 836,0 MiB is firmware, i.e. 34%.
-The largest single item is `linux-firmware-20260916-zstd` at 809,5 MiB.
+closure is 732 paths for 2467.7 MiB, of which 836.0 MiB is firmware, i.e. 34%.
+The largest single item is `linux-firmware-20260916-zstd` at 809.5 MiB.
 
 A method correction along the way: the figure of 1884 MiB that appeared here came
 from the **monolithic** `linux-firmware` package, whereas the image embeds the
@@ -68,7 +68,7 @@ reusing:
 - **The QEMU harness** (`graphics = false`, read-only cdrom disk, port
   forwarded) and two kernel parameters that change everything: `boot.shell_on_fail`
   and `console=ttyS0` — it is the latter that makes the automated boot test
-  possible. Its `memorySize = 2048` is too tight for an ISO of ~1,4 GiB with
+  possible. Its `memorySize = 2048` is too tight for an ISO of ~1.4 GiB with
   `copytoram`: raised to 3072.
 - **The intent behind `boot.kernelPackages = zfs.latestCompatibleLinuxPackages`**:
   to make the ZFS module and the kernel match up. The intent is right, the
@@ -124,7 +124,7 @@ neutral, it is precisely losing the property we were after.
 | x86_64 runners | 4 vCPU / 16 GB / 14 GB of SSD, free and unlimited on public repo |
 | `/dev/kvm` on x86_64 | **present** on the standard runners, but undocumented. Requires a udev rule (`static_node=kvm`, the runner user is not in the `kvm` group) and installing `qemu-system-x86`, absent from the image |
 | `/dev/kvm` on arm64 | **absent at every level** — a limitation of the Azure ARM SKU, not of the image. The aarch64 boot test therefore remains manual |
-| Disk | ~2,7 GiB of store + squashfs + ISO ≈ 5 GiB: ample within the 14 GB |
+| Disk | ~2.7 GiB of store + squashfs + ISO ≈ 5 GiB: ample within the 14 GB |
 | Binary cache | `magic-nix-cache-action` was abandoned in February 2025 then resurrected — we do not build on it. Cachix is the durable choice, not configured in v0.1 |
 
 The workflow fails explicitly if `/dev/kvm` is absent: without this guard rail,
@@ -184,7 +184,7 @@ dissimilar environments.
 | Nix implementation | upstream Nix 2.35.2 | upstream Nix 2.35.2 |
 | store | already populated | downloaded in full |
 | nixpkgs revision | `7fd4004d` (`flake.lock`) | same |
-| ISO sectors | 744 016 | 744 016 |
+| ISO sectors | 744,016 | 744,016 |
 | sha256 | `85d2355b…10e355` | `85d2355b…10e355` |
 
 Earlier runs are more interesting on the `Nix implementation` row. While CI still
