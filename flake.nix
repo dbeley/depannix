@@ -1,5 +1,5 @@
 {
-  description = "Dépannix — NixOS rescue environment: a minimal, reproducible and verifiable ISO";
+  description = "Dépannix - NixOS rescue environment: a minimal, reproducible and verifiable ISO";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
@@ -105,6 +105,13 @@
             echo "FAIL: the greeting never reached the serial console." >&2
             exit 1
           fi
+          # The greeting proves the banner rendered. This proves the command
+          # inside the image actually ran, which is a different claim, and the
+          # one that catches a broken script before a user does.
+          if ! grep -q 'DEPANNIX_SELFTEST tools=' $out/serial.log; then
+            echo "FAIL: the in-image self-test did not report on the serial console." >&2
+            exit 1
+          fi
           echo "mode=$MODE" > $out/result
         '';
 
@@ -124,7 +131,7 @@
         pkgs.callPackage ./nix/closure-manifest.nix { inherit toplevel; };
 
       # Guard rail: the ISO must not drift in size without anyone noticing.
-      # Budget 1800 MiB — the target is ~1.3-1.5 GiB (full firmware included).
+      # Budget 1800 MiB - the target is ~1.3-1.5 GiB (full firmware included).
       mkSizeBudget = system:
         let
           pkgs = pkgsFor system;
@@ -138,7 +145,7 @@
             "$size" "$((size / 1048576))" "$budget" "$((budget / 1048576))"
           if [ "$size" -gt "$budget" ]; then
             echo "FAIL: the ISO exceeds its size budget." >&2
-            echo "See docs/budget.md — adding a tool without measuring its closure is the usual cause." >&2
+            echo "See docs/budget.md - adding a tool without measuring its closure is the usual cause." >&2
             exit 1
           fi
           echo "OK" > $out

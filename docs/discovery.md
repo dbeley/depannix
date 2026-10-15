@@ -1,20 +1,20 @@
 # Discovery: making the medium describe itself
 
-Status: **built and shipped** in 2026.10. The decisions at the end were taken;
-`## As built` records what landed, with measurements.
+The decisions below were taken and built; `## As built` records what landed, with
+measurements. The reasoning is kept because it is what a future change would have
+to argue with.
 
-## Why this is the gap
+## The gap it closes
 
-The project spent its effort making the composition *provable by a third party*
-— a manifest, a signature, an attestation, a reproducible build. It spent almost
-none making it *legible to the person holding the stick*. Measured today, the
-image contains no motd, no alias, no help command and no way to list what it
-carries. The inventory exists in three places, all of them off the medium:
-`nix/tool-catalog.nix`, the release manifest, and `docs/budget.md`.
+The project spent its effort making the composition *provable by a third party*: a
+manifest, a signature, an attestation, a reproducible build. It spent almost none
+making it *legible to the person holding the stick*. The image had no motd, no
+help command, and no way to list what it carried; the inventory lived in three
+places, all of them off the medium.
 
-That inverts the situation it is meant for. A rescue medium is picked up because
-a machine is dead — no network, no repository, nobody to ask. The medium should
-answer, by itself, five questions:
+That inverts the situation it is meant for. A rescue medium is picked up because a
+machine is dead: no network, no repository, nobody to ask. It has to answer three
+readers by itself:
 
 | Reader | Question |
 |---|---|
@@ -22,128 +22,114 @@ answer, by itself, five questions:
 | whoever finds the stick | what is this, and what can it do? |
 | the auditor | what exactly is inside, and how do I prove it? |
 
-## What the image already carries
+## Already paid for
 
-The discovery layer is, in effect, already paid for. Measured against the
-published manifest (732 paths, x86_64):
+The layer needed content and hooks, not machinery: `fzf`, `ripgrep`, `fd`,
+`bash-completion`, `nano`, `less` and `jq` were in the image already. `dialog` and
+`whiptail` are not, so a TUI menu would be a new and measurable dependency for no
+added truth. The catalogue and the help are text.
 
-| Brick | Present |
-|---|---|
-| `fzf`, `ripgrep`, `fd` | yes — optional set, enabled by default |
-| `bash-interactive`, `bash-completion` | yes |
-| `nano`, `less`, `jq`, `gnugrep`, `util-linux` | yes |
-| `dialog`, `whiptail` | **no** — a TUI menu would be a new, measurable dependency |
+## The catalogue is the image
 
-So a categorised catalogue that is fuzzy-searched and tab-completed costs
-nothing in bytes. What is missing is content and hooks, not machinery.
-
-## The enabler, done
-
-`nix/tool-catalog.nix` now holds one entry per tool — `name`, `category`, and the
-`gesture` it covers — and `modules/tools.nix` only wires it. Two consequences
-worth stating:
-
-- the catalogue cannot lie about what ships, because it is *what* ships: there is
-  no separate list to drift from, so this needs no CI check;
-- the project rule grew its missing half. It was "no tool without its closure
-  figure"; it is now also "no tool without its gesture", enforced by an
-  assertion. Both were tested by deliberately inserting two bad entries and
-  reading the refusal.
-
-The change was proven inert: both ISO derivations are byte-identical before and
-after (`nix eval .#minimal.drvPath`).
+`nix/tool-catalog.nix` holds one entry per tool (`name`, `category`, `gesture`)
+and `modules/tools.nix` only wires it, so there is no parallel list to drift from
+the image: the catalogue cannot lie about what ships. The project rule grew its
+missing half at the same time. It was "no tool without its closure figure", it is
+now also "no tool without its gesture", enforced by an assertion. Both were tested
+by inserting bad entries and reading the refusal.
 
 ## The bricks
 
-1. **A greeting at login.** Three lines: which release, which architecture, where
-   you are (root on a live medium), and the two commands worth knowing. A few
-   hundred bytes, generated at build time so it cannot name the wrong release.
+1. **A greeting at login**, generated at build time so it cannot name the wrong
+   release: the release, the architecture, where you are, and the commands worth
+   knowing.
 
-2. **`depannix tools`** — the catalogue by *capability*, not by package. Every
-   line is the tool, the gesture, and its figure. Flags that matter:
-   `--search <word>` (fzf is present), `--category <name>`, `--json` (jq is
-   present) — and the separate sub-command `depannix missing <command>`, which
-   answers "not here — available on demand:
+2. **`depannix tools`**, the catalogue by capability rather than by package: every
+   line is the tool, the gesture it covers, and its closure figure for the optional
+   ones. `--search <word>` goes through `fzf --filter` when fzf is enabled and
+   falls back to `grep`, `--category <name>` filters, `--json` is for scripts, and
+   long output goes through `less`. Never in a pipe: a pager in the middle of a
+   pipeline is a bug, so the pager is only used when stdout is a terminal.
+
+3. **`depannix missing <command>`**, which answers "not here, and here is how to
+   get it":
 
        nix shell nixpkgs#<name>
 
-   That last one is the move nobody else in this category can make: it turns a
-   dead end into an action, at the exact moment of need. It does need network on
-   the machine being rescued: this image carries no nixpkgs checkout, only the
-   NixOS module tree that `nixos-install` pulls in (see `docs/budget.md`), so
-   there is no offline build path — and the help says so rather than implying
-   one.
+   That is the move nobody else in this category can make: it turns a dead end
+   into an action at the moment of need. It does need network on the machine being
+   rescued, since the image carries no nixpkgs checkout, only the NixOS module tree
+   that `nixos-install` pulls in (see `docs/budget.md`). The help says so rather
+   than implying otherwise.
 
-3. **`depannix help <subject>`** — the index by task, which is the actual 3 a.m.
+   The same answer is wired into the shell: `command_not_found_handle` is defined
+   in `interactiveShellInit`, prints the ordinary message, then calls that
+   sub-command. Typing `phoronix-test-suite` therefore answers that it is in the
+   catalogue but not in this image, with its measured size and the command to get
+   it, instead of a bare `command not found`.
+
+4. **`depannix help <subject>`**, the index by task, which is the actual 3 a.m.
    need: deleted files on a USB stick → `photorec`; a disk that clicks →
-   `ddrescue`; a broken GPT → `gdisk`; a vanished volume → `vgchange -ay`; a
-   LUKS container → `cryptsetup open`; a degraded array → `mdadm --examine`; a
-   pool → `zpool import`. This is writing, not code, and it is the highest-value
-   piece for a rescue medium.
+   `ddrescue`; a broken GPT → `gdisk`; a vanished volume → `vgchange -ay`; a LUKS
+   container → `cryptsetup open`; a degraded array → `mdadm --examine`; a pool →
+   `zpool import`. This is writing, not code, and it is the highest-value piece for
+   a rescue medium.
 
-4. **Completion**, generated from the same data, so `depannix <TAB>` lists the
-   sub-commands, the help subjects and the categories. The "couple of safe
-   aliases" considered here were dropped: an alias in a rescue context hides
-   which binary actually ran, at the moment the operator is least able to check.
+5. **Completion**, generated from the same data, so `depannix <TAB>` lists the
+   sub-commands, the help subjects and the categories. The "couple of safe aliases"
+   considered here were dropped: an alias hides which binary actually ran, at the
+   moment the operator is least able to check.
 
-5. **The same text as files on the medium** — `/depannix-tools.txt` and
-   `/depannix-help.txt` beside `/depannix-version`. Readable without running
-   anything, and part of the artifact, so the auditor reads what the operator
-   reads.
+6. **The same text as files in the home directory** (`~/depannix-tools.txt`,
+   `~/depannix-help.txt`, `~/depannix-version`), because that is where the shell
+   lands: a store path is not a place anyone browses. The two text files stay at
+   the root of the medium as well, which is mounted at `/iso`, so they can be read
+   from a machine that cannot boot the stick.
 
 ## Deliberately excluded
 
-- **A TUI menu.** `dialog` is absent, so it would be a new dependency for code
-  and no added truth; bricks 2 and 3 cover the need in text.
-- **A graphical interface.** v1 is a TUI by choice.
-- **Baking the full manifest** (≈355 KiB, 0.02 % of the ISO) without deciding
-  what it is *for*. It cannot prove anything about itself — a tampered ISO would
-  carry a tampered manifest — but it would let an offline machine check *another
-  copy of the same release*. That is a real if modest use, and it must not be
-  called authenticity.
-
-## Decisions (taken)
-
-1. **Scope**: the five bricks, without the baked manifest and without
-   `depannix verify`. The manifest cannot prove anything about the copy it sits
-   in — a tampered image carries a tampered manifest — and that was the reason to
-   leave it out.
-2. **Language**: English, like the rest of the repository. The accent of
-   *Dépannix* is the single exception, in the repository and in the image.
-3. **Files on the medium**: yes. The catalogue and the help are files at the root
-   of the ISO, not only commands.
+- **A TUI menu**, for want of `dialog`.
+- **A graphical interface**: this flavour is a TUI by choice.
+- **The full manifest baked into the image** (355 KiB, 0.02 % of the ISO). It
+  cannot prove anything about itself, since a tampered ISO would carry a tampered
+  manifest, though it would let an offline machine check another copy of the same
+  release. That is a real if modest use, and it must not be called authenticity.
 
 ## As built
 
-Everything below is generated at evaluation time from `nix/tool-catalog.nix` and
+Everything is generated at evaluation time from `nix/tool-catalog.nix` and
 `help/help.txt`, so there is no second copy to drift from the first.
 
 | Piece | Where it lands |
 |---|---|
-| `depannix` — bash, nothing beyond what the image already has | `bin/depannix` |
+| `depannix`, bash and nothing beyond what the image already has | `bin/depannix` |
 | the catalogue, as text and as JSON | `share/depannix/tools.txt`, `tools.json` |
-| the help, 16 subjects, plus an index | `share/depannix/help/`, `help.txt` |
+| the help, 17 subjects, plus an index | `share/depannix/help/`, `help.txt` |
 | bash completion | `share/bash-completion/completions/depannix` |
-| the greeting | `share/depannix/greeting.txt` |
-| the catalogue and the help as plain files | `/depannix-tools.txt`, `/depannix-help.txt` |
+| the greeting, and the missing-command hook | `share/depannix/greeting.txt`, `/etc/bashrc` |
+| the same files, where the operator is | `~/depannix-tools.txt`, `~/depannix-help.txt` |
 
-Three things learned while building it, all now recorded where they belong:
+Four things learned while building it:
 
 - **NixOS does not source `/etc/profile.d`.** Verified on a running system rather
-  than assumed: `/etc/profile` has no such loop, and the directory does not
-  exist. The greeting therefore hangs off `programs.bash.interactiveShellInit`.
-- **The greeting is asserted by the boot test.** It is written to the serial
-  console *before* the readiness marker, and the check greps the captured log for
-  it. What the operator reads on login was otherwise the one part of this image
-  nothing verified.
+  than assumed: `/etc/profile` has no such loop, and the directory does not exist.
+  The greeting and the missing-command hook therefore hang off
+  `programs.bash.interactiveShellInit`.
+- **The greeting and an in-image self-test are asserted by the boot test.** The
+  unit prints the greeting, then a line counting the enabled tools and the help
+  subjects (`DEPANNIX_SELFTEST tools=58 subjects=17`), then one missing-command
+  answer, all to the serial console before the readiness marker. What the operator
+  reads on login was otherwise the one part of this image that nothing verified.
 - **The command's dependencies were checked against the manifest, not assumed.**
   `gawk` and `findutils` are there; `sed` and `tr` were removed from the script
   anyway, because a rescue medium should not need an installer for its own help.
+- **A pager in a pipe is a bug.** `less -RFX` pages an interactive read and quits
+  immediately when the text fits one screen, which is what keeps short answers
+  behaving like `cat`.
 
-The cost, measured by diffing two closure manifests of the same revision
-(x86_64): **+56 800 bytes of NAR, 732 → 739 paths**, i.e. 0.002 % of the image.
-The discovery layer is content, not machinery — exactly as predicted above,
-because the tools it describes were already in the closure. The path set that
-moved is the three new derivations, the greeting text, the greet unit, and the
-usual re-generated system paths (`/etc`, `system-path`, the service units) whose
-hashes changed because `/etc/bashrc` now mentions the greeting.
+The cost, measured by diffing two closure manifests of the same revision (x86_64):
+**+56 800 bytes of NAR, 732 → 739 paths**, 0.002 % of the image. The layer is
+content, not machinery, because the tools it describes were already in the
+closure. The path set that moved is the new derivations, the greeting text, the
+greet unit, and the re-generated system paths (`/etc`, `system-path`, the units)
+whose hashes changed because `/etc/bashrc` now mentions the greeting.

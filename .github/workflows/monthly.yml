@@ -3,10 +3,10 @@ name: monthly
 # One release a month, with no human intervention: we follow nixpkgs-unstable,
 # open a pull request, CI builds and tests it, and the merge triggers a release.
 # The vYYYY.MM tag is applied by hand after the merge (or by an automatic tag if
-# you prefer — CI does exactly the same thing either way).
+# you prefer - CI does exactly the same thing either way).
 on:
   schedule:
-    - cron: "0 6 1 * *" # 06:00 UTC on the 1st of the month
+ - cron: "0 6 1 * *" # 06:00 UTC on the 1st of the month
   workflow_dispatch:
 
 permissions:
@@ -18,20 +18,20 @@ jobs:
   bump:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v5
+ - uses: actions/checkout@v5
 
-      - name: Install Nix
+ - name: Install Nix
         uses: DeterminateSystems/nix-installer-action@v22
         with:
           # `flakehub: false` is a no-op: the input is deprecated and merely
           # implies `determinate`, whose default is already true. The lever is
-          # `determinate: false`, which installs upstream Nix — same as ci.yml.
+          # `determinate: false`, which installs upstream Nix - same as ci.yml.
           determinate: false
 
-      - name: Update flake.lock
+ - name: Update flake.lock
         run: nix flake update
 
-      - name: Update the CalVer version
+ - name: Update the CalVer version
         id: version
         run: |
           v=$(date -u +%Y.%m)
@@ -39,7 +39,7 @@ jobs:
           grep -n 'version = "' flake.nix
           echo "value=$v" >> "$GITHUB_OUTPUT"
 
-      - name: Summary of the nixpkgs change
+ - name: Summary of the nixpkgs change
         run: |
           {
             echo "### nixpkgs"
@@ -49,7 +49,7 @@ jobs:
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Open the pull request
+ - name: Open the pull request
         id: pr
         uses: peter-evans/create-pull-request@v8
         with:
@@ -59,8 +59,8 @@ jobs:
           body: |
             Automated monthly update.
 
-            - `flake.lock` follows `nixos-unstable`
-            - CalVer version → `${{ steps.version.outputs.value }}`
+ - `flake.lock` follows `nixos-unstable`
+ - CalVer version → `${{ steps.version.outputs.value }}`
 
             CI builds the ISO, runs the BIOS and EFI boot tests, checks the size
             budget and publishes the composition manifest.
@@ -72,10 +72,10 @@ jobs:
       # A pull request opened with the default GITHUB_TOKEN does not trigger
       # `pull_request` workflows: GitHub suppresses the runs created by that
       # token, to prevent loops. Without this step the monthly PR would land with
-      # no CI at all — while its own body promises a build, two boot tests and a
+      # no CI at all - while its own body promises a build, two boot tests and a
       # manifest. `workflow_dispatch` is the documented exception to that rule,
       # which is why ci.yml accepts it.
-      - name: Start CI on the pull request
+ - name: Start CI on the pull request
         if: steps.pr.outputs.pull-request-number != ''
         env:
           GH_TOKEN: ${{ github.token }}
@@ -85,7 +85,7 @@ jobs:
       # produces no diff, and therefore no branch: the dispatch above then fails
       # with an HTTP 422 on a ref that was never created. Say so instead. This is
       # the normal case if the job is re-run inside the same month.
-      - name: Nothing to release this month
+ - name: Nothing to release this month
         if: steps.pr.outputs.pull-request-number == ''
         run: |
           {

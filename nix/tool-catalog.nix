@@ -3,7 +3,7 @@
 # This is data, not wiring, and it exists because of a rule: a tool that enters
 # the ISO carries its closure figure, and now also the gesture it covers. A list
 # of package names with prose comments beside it cannot be displayed, searched or
-# verified — it drifts the moment someone adds a tool. This file is the single
+# verified - it drifts the moment someone adds a tool. This file is the single
 # source that the image, the catalogue command and the documentation all read.
 #
 # `category` drives the grouping the operator sees. `gesture` is what a person
@@ -66,7 +66,20 @@ rec {
     { name = "tcpdump"; category = "network"; gesture = "capture traffic when nothing else explains it"; }
     { name = "socat"; category = "network"; gesture = "connect two sockets, whatever their type"; }
 
-    # Command-line working comfort — useful for diagnosis, not decorative
+    # Benchmarking: measure a machine before a repair and after it, and make an
+    # intermittent fault happen on purpose. Deliberately light: the heavy
+    # benchmark suites stay in the optional set, with their size shown.
+    { name = "openssl"; category = "benchmark"; gesture = "openssl speed: CPU throughput, algorithm by algorithm"; }
+    { name = "p7zip"; category = "benchmark"; gesture = "7z b: compress and decompress, in MIPS"; }
+    { name = "lz4"; category = "benchmark"; gesture = "lz4 -b: the fast compressor, in benchmark mode"; }
+    { name = "sysbench"; category = "benchmark"; gesture = "cpu, memory, threads and file I/O"; }
+    { name = "stress-ng"; category = "benchmark"; gesture = "load every subsystem until something breaks"; }
+    { name = "fio"; category = "benchmark"; gesture = "the reference disk benchmark"; }
+    { name = "hyperfine"; category = "benchmark"; gesture = "time any command, with statistics"; }
+    { name = "ioping"; category = "benchmark"; gesture = "disk latency, probe by probe"; }
+    { name = "john"; category = "benchmark"; gesture = "john --test: hash throughput, a classic CPU number"; }
+
+    # Command-line working comfort - useful for diagnosis, not decorative
     { name = "jq"; category = "comfort"; gesture = "read and reshape JSON"; }
     { name = "zstd"; category = "comfort"; gesture = "compress, and decompress what you find"; }
     { name = "file"; category = "comfort"; gesture = "identify content when the extension lies"; }
@@ -81,7 +94,7 @@ rec {
 
   # ── Convenience: measured, therefore accepted as optional ─────────────────
   # Figures are the closure of the package alone, through the official binary
-  # cache. Beware: they do not add up — shared dependencies are counted several
+  # cache. Beware: they do not add up - shared dependencies are counted several
   # times. They rank the cost, they do not budget it. The exact budget is the
   # union, see docs/budget.md.
   optional = [

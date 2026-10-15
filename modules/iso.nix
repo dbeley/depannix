@@ -6,9 +6,9 @@ let
 in
 {
   # Name shown in the boot menu. Both the nixpkgs default ("Installer") and a
-  # "Dépannix — " prefix are wrong: the label already begins with the
+  # "Dépannix - " prefix are wrong: the label already begins with the
   # distribution name, so the prefix produced entries reading
-  # "Dépannix — Dépannix 26.11.20261011.7fd4004".
+  # "Dépannix - Dépannix 26.11.20261011.7fd4004".
   #
   # What the menu was actually missing is the release. It carries the nixpkgs
   # label and the revision, not the CalVer that the file name and

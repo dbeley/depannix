@@ -94,7 +94,7 @@ in
     #
     # Measured cost, taken from the image manifest itself: 836.4 MiB, i.e. 34 %
     # of the closure, with linux-firmware-20260916-zstd alone at 809.5 MiB.
-    # See docs/budget.md — an earlier revision of this comment claimed 1884 MiB
+    # See docs/budget.md - an earlier revision of this comment claimed 1884 MiB
     # and 76 %, which was wrong by a factor of two.
     hardware.enableAllHardware = mkForce false;
     hardware.enableAllFirmware = mkForce false;
@@ -110,7 +110,7 @@ in
 
     # ── Kernel ───────────────────────────────────────────────────────────────
     # Console log level. An ordering trap: nixpkgs appends `loglevel=` AFTER
-    # kernelParams, so writing "loglevel=7" in boot.kernelParams does nothing —
+    # kernelParams, so writing "loglevel=7" in boot.kernelParams does nothing - 
     # the default (4) wins and the serial console stays mute, which makes a boot
     # failure undiagnosable in CI. Verified on the command line burned into the
     # ISO:
@@ -142,7 +142,7 @@ in
     ++ optional cfg.enableZfs "zfs";
 
     # With ZFS in the image, the kernel must be the one the ZFS module was built
-    # against — otherwise the module fails to build or the pool cannot be
+    # against - otherwise the module fails to build or the pool cannot be
     # mounted.
     #
     # We pin an explicit LTS, and NOT
@@ -163,7 +163,7 @@ in
     # ── Accounts ─────────────────────────────────────────────────────────────
     # The "installation device" profile sets an empty password on root and nixos
     # and enables autologin on the terminal. That is the expected behaviour of a
-    # live medium — but it is documented in the README, not hidden.
+    # live medium - but it is documented in the README, not hidden.
     users.users.root.openssh.authorizedKeys.keys = cfg.authorizedKeys;
     users.users.nixos.openssh.authorizedKeys.keys = cfg.authorizedKeys;
 

@@ -5,8 +5,8 @@ on:
     branches: [main]
     tags: ["v*"]
     paths-ignore:
-      - "**.md"
-      - "docs/**"
+ - "**.md"
+ - "docs/**"
   pull_request:
   workflow_dispatch:
 
@@ -31,39 +31,39 @@ jobs:
           # Ubuntu 26 on 2026-10-19: left floating, the build chain would change
           # by itself one working day, with nobody having decided it. Aligned
           # with the arm64 runner, which is pinned too.
-          - runner: ubuntu-24.04
+ - runner: ubuntu-24.04
             system: x86_64-linux
             kvm: true
           # The free arm64 runners do not expose /dev/kvm (an Azure ARM SKU
           # limitation, not an image one). So we build the aarch64 ISO but do not
           # boot it here: the aarch64 boot test stays manual. See docs/design.md.
-          - runner: ubuntu-24.04-arm
+ - runner: ubuntu-24.04-arm
             system: aarch64-linux
             kvm: false
 
     steps:
-      - uses: actions/checkout@v5
+ - uses: actions/checkout@v5
 
       # Version pinned on purpose: `@main` can change without warning, and thus
       # break a build that used to work, or move the trust chain with no trace.
       # v22 is the latest at the time of writing.
-      - name: Install Nix
+ - name: Install Nix
         uses: DeterminateSystems/nix-installer-action@v22
         with:
           # This action installs Determinate Nix by default, and that is what
           # makes it attempt a FlakeHub login: without a token the login fails
           # and leaves a warning on every run. `flakehub: false` does NOT stop
-          # it — the input is deprecated and merely implies `determinate`. The
+          # it - the input is deprecated and merely implies `determinate`. The
           # real lever is `determinate`, and switching it off keeps CI on
           # upstream Nix, the same one the development host runs. Verified not to
           # change the artifacts: both distributions produced the same ISO hash,
           # see docs/design.md.
           determinate: false
 
-      - name: Disk headroom before build
+ - name: Disk headroom before build
         run: df -h /
 
-      - name: Enable KVM (x86_64 only)
+ - name: Enable KVM (x86_64 only)
         if: matrix.kvm
         run: |
           sudo apt-get update -qq
@@ -80,16 +80,16 @@ jobs:
           # silently falls back to software emulation and the job times out.
           test -w /dev/kvm
 
-      - name: Build the ISO
+ - name: Build the ISO
         run: nix build .#minimal --out-link result-iso -L
 
-      - name: ISO size
+ - name: ISO size
         run: |
           iso=$(find result-iso/iso -name '*.iso' | head -1)
           ls -l "$iso"
           printf 'size: %s MiB\n' "$(( $(stat -c%s "$iso") / 1048576 ))"
 
-      - name: Boot test (BIOS, then EFI)
+ - name: Boot test (BIOS, then EFI)
         if: matrix.kvm
         run: |
           # /dev/kvm must be injected into the sandbox: without that, QEMU falls
@@ -99,19 +99,19 @@ jobs:
           nix build --option extra-sandbox-paths /dev/kvm .#checks.${{ matrix.system }}.boot-test-bios --out-link result-boot-bios -L
           nix build --option extra-sandbox-paths /dev/kvm .#checks.${{ matrix.system }}.boot-test-efi --out-link result-boot-efi -L
 
-      - name: Size guard
+ - name: Size guard
         run: nix build .#checks.${{ matrix.system }}.size-budget --out-link result-budget -L
 
-      - name: Composition manifest
+ - name: Composition manifest
         run: nix build .#packages.${{ matrix.system }}.closure-manifest --out-link result-manifest -L
 
-      - name: Build provenance attestation
+ - name: Build provenance attestation
         if: github.event_name != 'pull_request'
         uses: actions/attest-build-provenance@v4
         with:
           subject-path: result-iso/iso/*.iso
 
-      - uses: actions/upload-artifact@v7
+ - uses: actions/upload-artifact@v7
         with:
           name: depannix-${{ matrix.system }}
           path: |
@@ -132,25 +132,30 @@ jobs:
       ISO_DIR: dist/result-iso/iso
       MANIFEST_DIR: dist/result-manifest
     steps:
-      - uses: actions/checkout@v5
+ - uses: actions/checkout@v5
 
-      - uses: actions/download-artifact@v8
+ - uses: actions/download-artifact@v8
         with:
           pattern: depannix-*
           path: dist
           merge-multiple: true
 
-      - name: Checksums
+ - name: Checksums
         run: |
           ls -l "$ISO_DIR" "$MANIFEST_DIR"
-          # Strip the directory prefix so the sums carry bare file names and
-          # `sha256sum -c SHA256SUMS` works from the download directory.
-          sha256sum "$ISO_DIR"/*.iso | sed "s|$ISO_DIR/||" > dist/SHA256SUMS
+          # Strip the directory prefixes so the sums carry bare file names and
+          # `sha256sum -c SHA256SUMS` works from the download directory. The two
+          # manifests are covered too, so the signed file vouches for the proof
+          # as well as for the image.
+          {
+            sha256sum "$ISO_DIR"/*.iso
+            sha256sum "$MANIFEST_DIR"/closure-*.json "$MANIFEST_DIR"/closure-sri-*.tsv
+          } | sed -e "s|$ISO_DIR/||" -e "s|$MANIFEST_DIR/||" > dist/SHA256SUMS
           cat dist/SHA256SUMS
 
       # Signing stays optional: the job must not fail when the secret is not
       # configured, but we want to know whether it happened.
-      - name: Detect the signing key
+ - name: Detect the signing key
         id: sig
         env:
           MINISIGN_KEY: ${{ secrets.MINISIGN_SECRET_KEY }}
@@ -159,12 +164,12 @@ jobs:
             echo "enabled=true" >> "$GITHUB_OUTPUT"
           else
             echo "enabled=false" >> "$GITHUB_OUTPUT"
-            echo "::warning::MINISIGN_SECRET_KEY is absent — the release will not be signed"
+            echo "::warning::MINISIGN_SECRET_KEY is absent - the release will not be signed"
           fi
 
       # The `release` job does not share the `build` job environment: without
       # this step, `nix` does not exist here and signing fails.
-      - name: Install Nix (for minisign)
+ - name: Install Nix (for minisign)
         if: steps.sig.outputs.enabled == 'true'
         uses: DeterminateSystems/nix-installer-action@v22
         with:
@@ -174,7 +179,7 @@ jobs:
       # it asks the terminal, which CI does not have. The key stored in the
       # secret must therefore be UNENCRYPTED (`minisign -G -W`), otherwise this
       # step fails. It is the only non-interactive mode supported upstream.
-      - name: Sign
+ - name: Sign
         if: steps.sig.outputs.enabled == 'true'
         run: |
           mkdir -p ~/.minisign
@@ -185,7 +190,7 @@ jobs:
         env:
           MINISIGN_KEY: ${{ secrets.MINISIGN_SECRET_KEY }}
 
-      - name: Release notes
+ - name: Release notes
         run: |
           # Generated rather than left to --generate-notes, which on a first
           # release produces nothing but a changelog link. The release page is
@@ -195,17 +200,27 @@ jobs:
             echo "Minimal NixOS rescue ISO: diagnosis, benchmarks, repair,"
             echo "partitioning and cloning. Boot tested under KVM by CI."
             echo
-            echo "| asset | size |"
-            echo "|---|---|"
+            echo "**On an ordinary PC, take the x86_64 image: the file ending in"
+            echo '`.iso`.** The other assets are the proof of what is inside it.'
+            echo
             for iso in "$ISO_DIR"/*.iso; do
-              awk -v f="$(basename "$iso")" -v s="$(stat -c%s "$iso")" \
-                'BEGIN { printf "| `%s` | %d bytes (%.1f MiB) |\n", f, s, s / 1048576 }'
+              f=$(basename "$iso")
+              s=$(stat -c%s "$iso")
+              printf -- '- `%s` (%d bytes, %s MiB)\n' "$f" "$s" \
+                "$(awk -v s="$s" 'BEGIN { printf "%.1f", s / 1048576 }')"
             done
             echo
-            echo "One manifest per architecture, each file named after the one it describes:"
+            echo "| file | what it is for |"
+            echo "|---|---|"
+            echo '| `depannix-minimal-<release>-<system>.iso` | the image |'
+            echo '| `closure-<system>.json` | every embedded store path, with its NAR hash and size |'
+            echo '| `closure-sri-<system>.tsv` | the same paths and hashes, in the encoding narinfo files use |'
+            echo '| `SHA256SUMS` | the hashes of all of the above, signed |'
             echo
             for s in x86_64-linux aarch64-linux; do
-              echo "- **$s**: $(wc -l < "$MANIFEST_DIR"/store-paths-$s.txt) store paths, $(cat "$MANIFEST_DIR"/total-nar-size-$s.txt) bytes of NAR."
+              printf -- '- **%s**: %s store paths, %s bytes of NAR.\n' "$s" \
+                "$(jq 'length' "$MANIFEST_DIR/closure-$s.json")" \
+                "$(jq 'map(.narSize) | add' "$MANIFEST_DIR/closure-$s.json")"
             done
             echo
             echo '```'
@@ -222,8 +237,9 @@ jobs:
           ```
 
           The composition is published too, and can be checked against
-          `cache.nixos.org` without trusting this build. The recipe is in
-          `README-<system>.txt`, next to the manifest.
+          `cache.nixos.org` without trusting this build: one plain GET per
+          store path, comparing the answer with the `narHash` in
+          `closure-<system>.json`. The full recipe is in the project README.
           NOTES_EOF
 
           # Signing is optional, and the release page must not claim the opposite
@@ -262,15 +278,15 @@ jobs:
 
           ## Known limitations
 
-          - **The aarch64 boot test is manual.** The free arm64 runners expose no
+ - **The aarch64 boot test is manual.** The free arm64 runners expose no
             `/dev/kvm`, so the aarch64 ISO is built and attested but not booted
             here.
-          - **Secure Boot must be disabled.** The image carries no Secure Boot
+ - **Secure Boot must be disabled.** The image carries no Secure Boot
             signature: minisign signs the checksums, not the boot chain.
-          - No persistence and no graphical interface in v1.
+ - No persistence and no graphical interface in v1.
           LIMITS_EOF
 
-      - name: Publish
+ - name: Publish
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -287,19 +303,22 @@ jobs:
             "$ISO_DIR"/*.iso
             dist/SHA256SUMS
           )
-          # Both architectures ship a manifest, and every file name carries the
-          # system it describes. Publishing one un-suffixed set is what allowed the
-          # two to overwrite each other, leaving the release with a manifest
-          # matching an unstated architecture.
+          # Two files per architecture, and no more. A release page with
+          # eighteen assets buries the one file a visitor came for. Dropped as
+          # redundant or derivable: the bare path list and the total NAR size
+          # (both one jq call on the JSON), the per-architecture README (its
+          # content is in the release notes and in the project README), the
+          # manifest's own checksums (SHA256SUMS covers them now), and the
+          # registration file, which rebuilding
+          # `.#packages.<system>.closure-manifest` regenerates.
+          #
+          # Every published name carries the system it describes: both
+          # architectures ship a manifest, and un-suffixed names once meant the
+          # last one to land overwrote the other.
           for s in x86_64-linux aarch64-linux; do
             files+=(
-              "$MANIFEST_DIR"/store-paths-$s.txt
               "$MANIFEST_DIR"/closure-$s.json
               "$MANIFEST_DIR"/closure-sri-$s.tsv
-              "$MANIFEST_DIR"/total-nar-size-$s.txt
-              "$MANIFEST_DIR"/nix-path-registration-$s.txt
-              "$MANIFEST_DIR"/MANIFEST-$s.sha256
-              "$MANIFEST_DIR"/README-$s.txt
             )
           done
           if [ -f dist/SHA256SUMS.minisig ]; then

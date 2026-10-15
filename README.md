@@ -1,35 +1,40 @@
 # Dépannix
 
-A NixOS rescue environment, built as a minimal, reproducible and verifiable ISO.
-A medium you can extend on demand without reflashing it, and whose exact
-composition you can publish.
+A minimal NixOS rescue environment, for diagnosing, benchmarking and repairing a
+machine that no longer works.
 
-**Status: the first release is published.**
-[`v2026.10`](https://github.com/dbeley/depannix/releases/tag/v2026.10) was built
-end to end by CI, tested in BIOS and EFI under KVM, its composition verified
-against `cache.nixos.org`. `SHA256SUMS` is signed with minisign.
+It is a live ISO. It carries what you need to recover data from a failing disk,
+repair a filesystem or a bootloader, open an encrypted volume, clone a disk, and
+measure the hardware before and after a repair. Three things set it apart from
+the rescue distributions you already know:
 
-| | |
-|---|---|
-| ISO | 1453.2 MiB (1.419 GiB) |
-| embedded store | 732 paths, 2467.7 MiB |
-| hashes confirmed by `cache.nixos.org` | 685 out of 732, zero divergence |
-| reproducibility | bit-for-bit, verified on two distinct machines |
-| CI | green, x86_64 and aarch64 (boot tested on x86_64) |
-| repository | https://github.com/dbeley/depannix |
-
-The recipe for verifying it yourself is further down in this file.
+- **It tells you what it carries.** `depannix tools` lists everything by
+  capability, `depannix help <subject>` gives you the procedure for a failure.
+- **Its catalogue is not fixed at burn time.** On a machine that still has
+  network, any of the ~100,000 nixpkgs packages is one command away.
+- **Its composition is published and provable.** Every release ships the list of
+  embedded store paths with their hashes, and the image rebuilds bit for bit.
 
 ## Download
 
-[`v2026.10`](https://github.com/dbeley/depannix/releases/tag/v2026.10) — x86_64
-and aarch64, plus the composition manifest. Write it to a USB stick with `dd`
-(further down), never to a partition.
+[`v2026.10`](https://github.com/dbeley/depannix/releases/tag/v2026.10) has the
+x86_64 and the aarch64 image. The image is the file named
+`depannix-minimal-<release>-<system>.iso`: the other assets are the proof of what
+is inside it.
+
+Write it to a whole device, never to a partition:
+
+```bash
+lsblk -o NAME,SIZE,TYPE,TRAN,MODEL     # find your stick: TRAN=usb
+sudo dd if=depannix-minimal-2026.10-x86_64-linux.iso of=/dev/sdX bs=4M status=progress conv=fsync
+```
+
+Then check what you hold, before trusting it:
 
 ```bash
 sha256sum -c SHA256SUMS
 minisign -V -p depannix.pub -m SHA256SUMS
-gh attestation verify depannix-minimal-2026.10-x86_64-linux.iso --repo dbeley/depannix
+gh attestation verify depannix-minimal-*.iso --repo dbeley/depannix
 ```
 
 `gh attestation verify` exits 0 when the attestation is found and valid, and 1
@@ -37,204 +42,184 @@ with an HTTP 404 when the file has none. The signing key id is
 `9B9991F6C6D6836C`: compare it out of band, since `depannix.pub` ships from the
 same place as the signature it validates.
 
-## Getting started
+## Once it boots
 
-```bash
-nix build .#minimal-fast          # ISO, fast compression (local iteration)
-nix build .#minimal               # release ISO, zstd-19 compression
-nix run                           # boots the ISO in QEMU
-MODE=efi nix run                  # same, with EFI firmware
-
-nix build .#checks.x86_64-linux.boot-test-bios   # automated boot test
-nix build .#packages.x86_64-linux.closure-manifest
-nix flake check                   # BIOS + EFI boot test + size budget
-```
-
-Writing to a USB stick: `dd`, never a partition.
-
-```bash
-lsblk -o NAME,SIZE,TYPE,TRAN,MODEL     # identify the stick: TRAN=usb
-sudo dd if=result/iso/depannix-*.iso of=/dev/sdX bs=4M status=progress conv=fsync
-```
-
-## Finding your way once it boots
-
-The medium tells you what it is. On login, four lines:
+You get a root shell on a live medium, and the medium introduces itself:
 
 ```
-Dépannix 2026.10 — minimal rescue image (x86_64-linux)
+Dépannix 2026.10 - minimal rescue image (x86_64-linux)
 
-You are root on a live medium: nothing you do here survives a reboot.
+You are root on a live medium: nothing here survives a reboot.
   depannix tools        what this image carries
-  depannix help <what>  what to do about a failure
+  depannix help         what to do about a failure (subjects, one per file)
+  ~/depannix-help.txt   the same as a file, and on the stick at /iso
 ```
 
-`depannix` is the answer to "which of these 49 tools do I actually want?":
+`depannix` answers the question you actually have at that point, which is not
+"which packages are installed" but "which of these tools do I want":
 
 ```bash
-depannix tools                   # the catalogue, grouped by capability
-depannix tools --search raid     # fuzzy, through fzf
-depannix missing photorec        # is it here? and how to get it if not
-depannix help                    # the subjects covered
-depannix help dying-disk         # a hand-written procedure for a failing disk
+depannix tools                    # the catalogue, by capability, through less
+depannix tools --search raid      # fuzzy, through fzf
+depannix tools --category benchmark
+depannix help                     # the 17 subjects covered
+depannix help dying-disk          # one of them, in full
+depannix missing photorec         # is it here? and how to get it if not
 ```
 
-The help is 16 subjects — a disk that is failing, deleted files, a lost
-partition table, LVM, LUKS, RAID, ZFS, a machine that no longer boots, cloning,
-wiping, SMART, the network, memory — and each one names commands that are in the
-image, and only those.
+Type a command that is not installed and the shell tells you where it is, instead
+of leaving you at `command not found`:
 
-The same catalogue and the same help sit as plain files at the root of the
-medium, so a machine that can run nothing can still read them:
-`/depannix-tools.txt` and `/depannix-help.txt`.
+```
+$ phoronix-test-suite
+bash: phoronix-test-suite: command not found
+phoronix-test-suite: in the catalogue, but not in this image.
+  benchmark: benchmark and compare machines  [606 MiB, 139 paths]
+  with network:  nix shell nixpkgs#phoronix-test-suite
+```
 
-All of it is generated from the list that builds the image, so it cannot drift
-from what ships — and it costs **56 KiB** of store, because the tools it
-describes were already there.
+The subjects covered are: a disk that is failing, deleted files, a lost partition
+table, a damaged filesystem, LVM, LUKS, RAID, ZFS, a machine that no longer
+boots, cloning a disk, erasing one, SMART, the network, memory, benchmarks, and
+how to verify this very medium.
 
-## What's in the image, and the real way to extend it
+The catalogue and the help are also plain files, in the home directory you land
+in (`~/depannix-tools.txt`, `~/depannix-help.txt`) and at the root of the stick,
+readable from a machine you cannot boot at all.
 
-The selection lives in `modules/tools.nix`, split into **capability** (you can't
-repair without it) and **convenience** (optional, sized). The detailed
-measurements are in `docs/budget.md`.
+## What is inside
 
-The one thing that changes everything compared to SystemRescue or Grml: **the
-catalogue isn't fixed at burn time**. On a machine you're rescuing that still has
-connectivity, any of the ~100,000 packages in nixpkgs is one command away:
+The selection is small on purpose: **58 tools**, so that every failure mode has a
+tool and every tool has a reason.
+
+| | |
+|---|---|
+| partitioning, filesystems | parted, gptfdisk, e2fsprogs, xfsprogs, btrfs-progs, ntfs3g, exfatprogs, f2fs-tools, jfsutils, nilfs-utils, bcachefs-tools, mdadm, lvm2, cryptsetup, partclone, fsarchiver, squashfs-tools |
+| recovery | testdisk (photorec), ddrescue, dcfldd, nwipe, sleuthkit |
+| diagnostics | smartmontools, nvme-cli, hdparm, sdparm, lshw, dmidecode, pciutils, usbutils, ethtool |
+| benchmarks | openssl, p7zip, lz4, sysbench, stress-ng, fio, hyperfine, ioping, john |
+| network | iperf3, nmap, tcpdump, socat |
+| comfort | jq, zstd, file, lsof, strace, tmux, screen, rsync, nano, less |
+| discovery | fzf, ripgrep, fd, and the `depannix` command itself |
+
+The heavy tools stay in the catalogue with their measured size, one build flag
+away: gparted (385 MiB), phoronix-test-suite (606 MiB), guymager (2540 MiB),
+gsmartcontrol (317 MiB), neovim (262 MiB), fish (309 MiB). `docs/budget.md` holds
+the measured closure of everything.
+
+## Extending it without reflashing
+
+On a machine that still has network, any nixpkgs package is one command away:
 
 ```bash
 nix shell nixpkgs#some-package
 ```
 
-That is the whole point of the Nix substrate, and it costs nothing in the image.
-What this image does **not** do is build from source without network: it carries
-the NixOS module tree (200 MiB, pulled in by `nixos-install`) and a `stdenv`
-without a C compiler, but no nixpkgs checkout. So `nix shell` is the network
-path, and the only one. `depannix missing <tool>` says the same thing from
-inside the image.
+That is the point of building on Nix, and it costs nothing in the image. What the
+image does **not** do is build from source offline: it carries the NixOS module
+tree (200 MiB, pulled in by `nixos-install`) and a `stdenv` without a C
+compiler, but no nixpkgs checkout. `depannix missing <tool>` says the same thing
+from inside the image.
 
-## Project rules
+## Verifying the contents
 
-1. **No tool goes into the ISO without its closure size** measured and recorded
-   in `docs/budget.md` — and without its **gesture**, the one line that says
-   what it is for. Both are now mechanical: the catalogue in
-   `nix/tool-catalog.nix` builds the image, and an assertion refuses to evaluate
-   if an entry lacks either. A catalogue that silently omits a tool is a
-   catalogue that lies.
-2. **Nothing that can't be redistributed.** `nixpkgs.config.allowUnfree = false`,
-   and firmware is limited to what's redistributable
-   (`hardware.enableAllHardware` is explicitly disabled). That's what makes it
-   legitimate to publish the image's composition.
-3. **No secrets or personal keys in the artifact.** `depannix.authorizedKeys` is
-   empty by default; sshd accepts keys only, never passwords.
-4. **No release ships if a test fails.** We stay on the last green month rather
-   than publish an ISO that won't boot.
+Each release publishes four things per architecture:
 
-## Proving the contents
-
-The project aims for an artifact whose composition anyone can verify without
-trusting whoever produced it.
-
-| Piece | What it proves |
+| file | what it is for |
 |---|---|
-| `flake.lock` (versioned) | the exact nixpkgs revision, and therefore the whole dependency tree |
-| `closure-manifest` | the exhaustive list of embedded store paths + their hashes |
-| `SHA256SUMS` | the published ISO is the one whose bytes were measured |
-| minisign signature | that nobody altered it after the fact |
-| provenance attestation (CI) | the artifact came out of this workflow, on this commit |
+| `depannix-minimal-<release>-<system>.iso` | the image |
+| `closure-<system>.json` | every embedded store path, with its NAR hash and size |
+| `closure-sri-<system>.tsv` | the same paths and hashes, in the encoding narinfo files use |
+| `SHA256SUMS` and `SHA256SUMS.minisig` | the hashes of all of the above, signed |
 
-Verification:
+Checking the composition needs no Nix and no trust in whoever ran the build, only
+one plain HTTP request per package against the public binary cache:
 
 ```bash
-# 1. the ISO is intact
+# 1. the image and the manifests are intact, and the sums are signed
 sha256sum -c SHA256SUMS
+minisign -V -p depannix.pub -m SHA256SUMS
 
-# 2. its composition is the one in the published manifest — without Nix, and
-#    without trusting whoever built the image: one plain GET per package.
-#    Take the manifest whose name matches the ISO you downloaded: the closure
-#    differs between architectures, so every file is named after one.
+# 2. every package that came from nixpkgs matches the published hash. Take the
+#    manifest whose name matches the image you downloaded: the closure differs
+#    between architectures.
 awk '!/^#/ {print $1}' closure-sri-x86_64-linux.tsv | while read -r p; do
   h=$(basename "$p")
   curl -s "https://cache.nixos.org/${h%%-*}.narinfo" | sed -n 's/^NarHash: //p'
 done
 # then compare each value against the narHash field of closure-x86_64-linux.json
 
-# 3. you can rebuild the exact same system
-git checkout <tag> && nix build .#minimal
-
-# 4. the artifact came out of this workflow, on this commit (needs gh)
-gh attestation verify depannix-minimal-2026.10-x86_64-linux.iso --repo dbeley/depannix
+# 3. the image came out of this repository, on a known commit
+gh attestation verify depannix-minimal-*.iso --repo dbeley/depannix
 ```
 
-Measured on the x86_64-linux 2026.10 image: **685 of the 732 paths** are confirmed
-identical by `cache.nixos.org`, **zero divergence**. The other 47 are derived
-locally (the NixOS system itself, the generated `/etc`, the systemd units): they
-exist in no binary cache, and for those only a rebuild is authoritative. The
-counts differ per architecture, and the aarch64 coverage has not been measured —
-so it is not claimed here.
+Most paths are confirmed this way. The rest are the NixOS system itself, the
+generated `/etc` and the systemd units: they exist in no binary cache, so nothing
+can confirm them except a rebuild, which is what the next section is for.
 
-The bit-for-bit reproducibility of the ISO is **established**, and it is the
-most important result of the project. The same revision, built on the GitHub
-runner (4 vCPU, store downloaded in full) and on a NixOS machine (2 vCPU, store
-already populated), produces the **same hash** `85d2355b…10e355` and the **same
-sector count** (744,016). Two distinct environments, a single artifact: a third
-party can therefore rebuild the image and compare it to ours.
+## Building it yourself
 
-Two successive builds of the manifest likewise produced the same digests
-(`closure-x86_64-linux.json` → `3140438d…`,
-`store-paths-x86_64-linux.txt` → `888e156f…`).
+```bash
+nix build .#minimal          # the release image, zstd-19 compression
+nix build .#minimal-fast     # the same, fast compression, for iterating
+nix run                      # boot it in QEMU
+MODE=efi nix run             # the same, with EFI firmware
+nix flake check              # BIOS and EFI boot tests, then the size guard
+```
 
-## Known limitations
+Two builds of the same revision, on two different machines, produce the same
+bytes: same sha256, same sector count. That is what makes the published manifest
+worth anything.
 
-- **Secure Boot: must be disabled.** The ISO carries no Secure Boot signature —
+## Project rules
+
+1. No tool enters the image without its measured closure size, and without one
+   line saying what it is for. Both are mechanical: the catalogue in
+   `nix/tool-catalog.nix` builds the image, and an assertion refuses to evaluate
+   when an entry lacks either.
+2. Nothing that cannot be redistributed. `allowUnfree` is off and firmware is
+   limited to the redistributable set, which is what makes publishing the
+   composition legitimate.
+3. No secret and no personal key in the artifact. SSH accepts keys only, never a
+   password, and no key ships by default.
+4. No release ships if a test fails. Better to stay on the last green month than
+   to publish an image that does not boot.
+
+## Limitations
+
+- **Secure Boot must be disabled.** The image carries no Secure Boot signature:
   minisign signs the checksums, not the boot chain. This is the main gap
-  compared to Parted Magic, and a project in its own right (signed shim, MOK
-  enrollment).
-- **Multiboot launchers are untested, and partial by construction.** The image
-  boots on its own — that is the `dd` path the CI exercises — or from a launcher
-  that provides `iso_path`, the convention grubfm follows and the nixpkgs ISO
-  template uses in `findiso=${iso_path}`. Ventoy does not provide it: it relies
-  on injecting its own hook instead, which only its normal Linux path performs.
-  Its secondary "Grub2 Mode" therefore cannot boot this image — that path falls
-  back to loading the ISO's own configuration without the injection, and the
-  kernel starts with a command line that is not the one the image wrote (observed:
-  `initrd-find-nixos-closure` failing with "No init= parameter"). Use the plain
-  entry, or write the stick with `dd`.
-- **No graphical interface** in v1. A deliberate choice: GNOME costs ~1.1 GiB of
-  store for `nautilus` alone, and automatic disk mounting is precisely what you
-  must not have during data recovery.
-- **No persistence.** In v1, anything installed during a session disappears on
-  reboot. Persistence is planned for v2.
-- **Accounts with no password.** Like any live medium, `root` and `nixos` have no
-  password in a session. Acceptable physically, but don't leave it sitting
-  plugged into a networked machine.
-- **`aarch64` not tested in CI.** Free arm64 runners don't expose `/dev/kvm`:
-  the ISO is built, but its boot is tested by hand.
-- **No Clonezilla.** Not in nixpkgs; cloning relies on `partclone`,
-  `fsarchiver` and `ddrescue`, which cover the need.
+  compared with commercial rescue media, and a project of its own.
+- **Write the stick with `dd`, or use a launcher's plain entry.** The image boots
+  on its own, which is the path CI exercises, or from a launcher that provides
+  `iso_path`, the convention grubfm follows and the nixpkgs ISO template uses in
+  `findiso=${iso_path}`. Ventoy does not provide it: it injects its own hook
+  instead, and only on its normal path, so its "Grub2 Mode" cannot boot this
+  image.
+- **The aarch64 boot test is manual.** Free arm64 runners expose no `/dev/kvm`,
+  so the aarch64 image is built and attested but not booted in CI.
+- **No persistence, and no graphical interface.** Both are deliberate: automatic
+  disk mounting is the last thing you want during data recovery. A graphical
+  flavour would cost about 1.1 GiB for `nautilus` alone.
+- **`root` and `nixos` have no password** in a session, like any live medium. Do
+  not leave the stick plugged into a networked machine.
 
-## Roadmap
+## Documentation and layout
 
-- **v0.1 — done.** Minimal flavor, ISO built end to end, boot tested in BIOS and
-  EFI, composition manifest verified, size and boot guardrails in CI.
-- **v0.2 — done.** CI is green on both architectures, the ISO rebuilds identically
-  on another machine, `v2026.10` is published and signed (minisign key id
-  `9B9991F6C6D6836C`), and each architecture ships its own manifest under a name
-  that says which one it is. What remains is the `aarch64` boot test, to be done by
-  hand: the free arm64 runners expose no `/dev/kvm`.
-- **v0.3** — automatic monthly release, blocking size budget and boot test.
-- **v1.0** — complete verification documentation.
-- **v2** — persistence, then possibly a graphical flavor.
-
-## Tree
+`docs/design.md` has the architecture decisions and their rationale,
+`docs/budget.md` the measured closure of everything in the image, and
+`docs/discovery.md` how the medium describes itself.
 
 ```
-flake.nix                  inputs and outputs: ISO, tests, guardrails
-modules/base.nix           foundation: firmware, kernel, licenses, SSH, boot marker
-modules/tools.nix          tool selection, capability vs convenience, sized
-modules/iso.nix            name, boot menu, compression, volume
-nix/qemu-run.sh            QEMU launch: interactive or marker-based test
-nix/closure-manifest.nix   composition manifest (the proof)
-docs/budget.md             size measurements and the project rule
-docs/design.md             architecture decisions and their rationale
+flake.nix                    inputs and outputs: image, boot tests, size guard
+modules/base.nix             foundation: firmware, kernel, licences, SSH, marker
+modules/tools.nix            wiring built from the catalogue, with assertions
+modules/iso.nix              name, boot menu, compression, volume
+modules/discovery.nix        greeting, shell hook, files on the medium
+nix/tool-catalog.nix         the catalogue: name, category, gesture
+nix/discovery-bundle.nix     generates the command, the catalogue and the help
+nix/depannix.sh              the `depannix` command itself
+help/help.txt                the procedures, written by hand
+nix/qemu-run.sh              QEMU launch: interactive, or marker-based test
+nix/closure-manifest.nix     the composition manifest, which is the proof
 ```

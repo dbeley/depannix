@@ -9,7 +9,7 @@
 #   MEM=3072  CPUS=2
 #
 # Without MARKER : QEMU runs in the foreground, interactive (`nix run`).
-# With MARKER    : test mode — we wait for the MARKER string on the serial
+# With MARKER    : test mode - we wait for the MARKER string on the serial
 #                  console, kill QEMU as soon as it appears, and exit non-zero
 #                  if TIMEOUT seconds pass without seeing it.
 set -uo pipefail
@@ -46,7 +46,7 @@ if [ -w /dev/kvm ]; then
   echo "[qemu] KVM enabled" >&2
 else
   args+=( -cpu max )
-  echo "[qemu] KVM unavailable — software emulation, this will be slow" >&2
+  echo "[qemu] KVM unavailable - software emulation, this will be slow" >&2
 fi
 
 case "$MODE" in

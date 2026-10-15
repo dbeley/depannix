@@ -52,13 +52,13 @@ let
   ) (builtins.filter (b: b != "") (lib.splitString "\n== " (lib.removePrefix "== " helpRaw)));
 
   helpIndexText =
-    "Subjects covered. Each one is also a file, and the whole text is on the\n"
-    + "medium as /depannix-help.txt.\n\n"
+    "Subjects covered. Each one is also a file, and the whole text is at\n"
+    + "~/depannix-help.txt (or /iso/depannix-help.txt, from the stick itself).\n\n"
     + lib.concatMapStringsSep "\n" (s: "  ${pad 24 s.slug}${s.title}") subjects
     + "\n\n  depannix help <subject>     one of them, in full\n";
 
   helpFullText =
-    "Dépannix ${version} — what to do about a failure (${system})\n\n"
+    "Dépannix ${version} - what to do about a failure (${system})\n\n"
     + helpIndexText
     + "\n"
     + lib.concatMapStringsSep "\n" (s: "== ${s.slug} | ${s.title}\n\n${s.body}\n") subjects;
@@ -68,16 +68,16 @@ let
 
   # ── The catalogue, as text and as JSON ────────────────────────────────────
   toolsText = pkgs.writeText "depannix-tools.txt" (
-    "Dépannix ${version} — what this image carries (${system})\n\n"
+    "Dépannix ${version} - what this image carries (${system})\n\n"
     + "Grouped by capability, not by package. A tool marked \"not enabled here\"\n"
     + "is in the catalogue but costs more than the default build accepts;\n"
     + "`depannix missing <name>` says how to get it anyway.\n\n"
     + lib.concatMapStringsSep "\n\n" (
       cat:
-      "${cat} — ${categoryTitles.${cat}}\n"
+      "${cat} - ${categoryTitles.${cat}}\n"
       + lib.concatMapStringsSep "\n" (
         e:
-        "  ${e.name} — ${e.gesture}"
+        "  ${e.name} - ${e.gesture}"
         + lib.optionalString (e ? figure) "  [${e.figure}]"
         + lib.optionalString (!e.enabled) "  (not enabled here)"
       ) (builtins.filter (e: e.category == cat) entries)
@@ -98,11 +98,12 @@ let
   versionText = pkgs.writeText "depannix-version.txt" "Dépannix ${version} (${system}, nixpkgs ${label})\n";
 
   greetingText = pkgs.writeText "depannix-greeting.txt" ''
-    Dépannix ${version} — minimal rescue image (${system})
+    Dépannix ${version} - minimal rescue image (${system})
 
-    You are root on a live medium: nothing you do here survives a reboot.
+    You are root on a live medium: nothing here survives a reboot.
       depannix tools        what this image carries
-      depannix help <what>  what to do about a failure
+      depannix help         what to do about a failure (subjects, one per file)
+      ~/depannix-help.txt   the same as a file, and on the stick at /iso
   '';
 
   # ── The package ───────────────────────────────────────────────────────────

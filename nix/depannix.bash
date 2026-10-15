@@ -1,7 +1,7 @@
 # Bash completion for depannix.
 #
 # Found through $XDG_DATA_DIRS/bash-completion/completions/, which is how bash
-# loads completions on demand on NixOS — not /etc/profile.d, which this system
+# loads completions on demand on NixOS - not /etc/profile.d, which this system
 # does not source.
 _data="@DATA@"
 

@@ -93,8 +93,8 @@ activated, because the machine booted from another medium.
     pvs && vgs && lvs
     mount /dev/vg0/root /mnt
 
-If a physical volume is missing from the group — a disk not plugged back in, an
-enclosure that enumerated late — the group comes up partial. `pvs` shows which
+If a physical volume is missing from the group - a disk not plugged back in, an
+enclosure that enumerated late - the group comes up partial. `pvs` shows which
 one is absent, and `vgchange -ay --partial` activates what is left. That is a
 rescue measure, not a repair: copy the data out, then fix the group properly.
 
@@ -127,7 +127,7 @@ a lost volume.
 A degraded array still reads. Do not "repair" it by adding a disk before you
 have copied what you need: an array that rebuilds in the wrong order destroys
 what it was protecting. Read `--examine` on every member, and compare the event
-counts — the odd one out is the one to distrust.
+counts - the odd one out is the one to distrust.
 
 == zfs | Importing a pool from a machine that will not boot
 
@@ -237,11 +237,43 @@ Memtest86+ in the boot menu; let it run several passes. For the inventory rather
 than the test, `dmidecode -t memory` lists what is in the slots, which is what you
 need before swapping a module.
 
+== benchmark | Measuring a machine, before and after
+
+    openssl speed -evp aes-256-gcm   # CPU, through the crypto operations
+    openssl speed rsa2048            # the single-thread case
+    7z b                             # compress and decompress, in MIPS
+    lz4 -b <file>                    # the same idea, on lz4
+    zstd -b <file>                   # the compressor this image is built with
+    sysbench cpu --threads=$(nproc) run
+    sysbench memory run              # memory bandwidth
+    stress-ng --cpu 0 --timeout 60s  # every core, for one minute
+    stress-ng --vm 2 --vm-bytes 80% --timeout 60s
+    hyperfine 'command'              # time any command, with statistics
+    ioping -c 10 /mnt                # disk latency, one probe at a time
+    fio --name=randread --rw=randread --bs=4k --size=1G --runtime=30 \
+        --filename=/mnt/fiofile --direct=1
+    john --test                      # hash throughput, a classic CPU number
+
+What matters is the comparison, not the score. Run the same command on a machine
+you trust and on the one you doubt: two identical machines that differ by 30 %
+tell you something, an absolute number tells you nothing.
+
+`stress-ng` is also a diagnostic. It makes an intermittent fault reproducible
+while you watch `dmesg -w` in another terminal, which is often the only way to
+see a failing power supply or a memory error.
+
+Do not benchmark a disk you already suspect: read `depannix help disk-health`
+first, and image it with ddrescue before you make it work.
+
 == verifying-the-medium | What is in this image, and how to prove it
 
     depannix tools              # the catalogue, by capability
-    cat /depannix-tools.txt     # the same, as a file, without running anything
-    cat /depannix-version       # which release you are holding
+    cat ~/depannix-tools.txt    # the same, as a file, without running anything
+    cat ~/depannix-version      # which release you are holding
+
+Both files also sit at the root of the stick, readable from any machine that
+mounts the image (at /iso while this system runs). That is what you want when
+the machine you are rescuing cannot boot at all.
 
 Every release publishes a manifest of the store paths in the image with their
 hashes, plus SHA256SUMS signed with minisign. On a machine that has network:
