@@ -57,6 +57,41 @@ lsblk -o NAME,SIZE,TYPE,TRAN,MODEL     # identify the stick: TRAN=usb
 sudo dd if=result/iso/depannix-*.iso of=/dev/sdX bs=4M status=progress conv=fsync
 ```
 
+## Finding your way once it boots
+
+The medium tells you what it is. On login, four lines:
+
+```
+Dépannix 2026.10 — minimal rescue image (x86_64-linux)
+
+You are root on a live medium: nothing you do here survives a reboot.
+  depannix tools        what this image carries
+  depannix help <what>  what to do about a failure
+```
+
+`depannix` is the answer to "which of these 49 tools do I actually want?":
+
+```bash
+depannix tools                   # the catalogue, grouped by capability
+depannix tools --search raid     # fuzzy, through fzf
+depannix missing photorec        # is it here? and how to get it if not
+depannix help                    # the subjects covered
+depannix help dying-disk         # a hand-written procedure for a failing disk
+```
+
+The help is 16 subjects — a disk that is failing, deleted files, a lost
+partition table, LVM, LUKS, RAID, ZFS, a machine that no longer boots, cloning,
+wiping, SMART, the network, memory — and each one names commands that are in the
+image, and only those.
+
+The same catalogue and the same help sit as plain files at the root of the
+medium, so a machine that can run nothing can still read them:
+`/depannix-tools.txt` and `/depannix-help.txt`.
+
+All of it is generated from the list that builds the image, so it cannot drift
+from what ships — and it costs **56 KiB** of store, because the tools it
+describes were already there.
+
 ## What's in the image, and the real way to extend it
 
 The selection lives in `modules/tools.nix`, split into **capability** (you can't
@@ -64,21 +99,28 @@ repair without it) and **convenience** (optional, sized). The detailed
 measurements are in `docs/budget.md`.
 
 The one thing that changes everything compared to SystemRescue or Grml: **the
-catalogue isn't fixed at burn time**. A NixOS ISO ships a copy of nixpkgs and
-`stdenv`, so on a machine you're rescuing that still has connectivity:
+catalogue isn't fixed at burn time**. On a machine you're rescuing that still has
+connectivity, any of the ~100,000 packages in nixpkgs is one command away:
 
 ```bash
-nix shell nixpkgs#outil-quelconque    # any of the ~100,000 packages
+nix shell nixpkgs#some-package
 ```
 
-That's why 281 MiB of store is deliberately spent on a copy of nixpkgs +
-`stdenvNoCC`: with no network, you can still build a package from source. A
-rescue medium that assumes a healthy machine isn't a rescue medium.
+That is the whole point of the Nix substrate, and it costs nothing in the image.
+What this image does **not** do is build from source without network: it carries
+the NixOS module tree (200 MiB, pulled in by `nixos-install`) and a `stdenv`
+without a C compiler, but no nixpkgs checkout. So `nix shell` is the network
+path, and the only one. `depannix missing <tool>` says the same thing from
+inside the image.
 
 ## Project rules
 
 1. **No tool goes into the ISO without its closure size** measured and recorded
-   in `docs/budget.md`.
+   in `docs/budget.md` — and without its **gesture**, the one line that says
+   what it is for. Both are now mechanical: the catalogue in
+   `nix/tool-catalog.nix` builds the image, and an assertion refuses to evaluate
+   if an entry lacks either. A catalogue that silently omits a tool is a
+   catalogue that lies.
 2. **Nothing that can't be redistributed.** `nixpkgs.config.allowUnfree = false`,
    and firmware is limited to what's redistributable
    (`hardware.enableAllHardware` is explicitly disabled). That's what makes it

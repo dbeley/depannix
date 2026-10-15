@@ -1,7 +1,7 @@
 # Discovery: making the medium describe itself
 
-Status: design note. The enabler is committed; none of the bricks below are
-written yet, and the decisions at the end are open.
+Status: **built and shipped** in 2026.10. The decisions at the end were taken;
+`## As built` records what landed, with measurements.
 
 ## Why this is the gap
 
@@ -59,7 +59,7 @@ after (`nix eval .#minimal.drvPath`).
    you are (root on a live medium), and the two commands worth knowing. A few
    hundred bytes, generated at build time so it cannot name the wrong release.
 
-2. **`depannix-tools`** — the catalogue by *capability*, not by package. Every
+2. **`depannix tools`** — the catalogue by *capability*, not by package. Every
    line is the tool, the gesture, and its figure. Flags that matter:
    `--search <word>` (fzf is present), `--json` (jq is present), and
    `--missing <name>`, which answers "not here — available on demand:
@@ -67,8 +67,11 @@ after (`nix eval .#minimal.drvPath`).
        nix shell nixpkgs#<name>
 
    That last one is the move nobody else in this category can make: it turns a
-   dead end into an action, at the exact moment of need. It is the one thing the
-   ~281 MiB copy of nixpkgs and `stdenv` inside the image is *for*.
+   dead end into an action, at the exact moment of need. It does need network on
+   the machine being rescued: this image carries no nixpkgs checkout, only the
+   NixOS module tree that `nixos-install` pulls in (see `docs/budget.md`), so
+   there is no offline build path — and the help says so rather than implying
+   one.
 
 3. **`depannix help <subject>`** — the index by task, which is the actual 3 a.m.
    need: deleted files on a USB stick → `photorec`; a disk that clicks →
@@ -96,13 +99,48 @@ after (`nix eval .#minimal.drvPath`).
   copy of the same release*. That is a real if modest use, and it must not be
   called authenticity.
 
-## Open decisions
+## Decisions (taken)
 
-1. **Scope.** The five bricks, or the five minus the task index (catalogue only,
-   help written later), or those plus the baked manifest and a `depannix verify`
-   comparing the running system to it?
-2. **Language of the in-image text.** English like the rest of the repository, a
-   bilingual greeting chosen from the machine's locale, or French in the image
-   while the repository stays English?
-3. **Files on the medium.** Ship the catalogue and help as files in addition to
-   the commands, or only as commands?
+1. **Scope**: the five bricks, without the baked manifest and without
+   `depannix verify`. The manifest cannot prove anything about the copy it sits
+   in — a tampered image carries a tampered manifest — and that was the reason to
+   leave it out.
+2. **Language**: English, like the rest of the repository. The accent of
+   *Dépannix* is the single exception, in the repository and in the image.
+3. **Files on the medium**: yes. The catalogue and the help are files at the root
+   of the ISO, not only commands.
+
+## As built
+
+Everything below is generated at evaluation time from `nix/tool-catalog.nix` and
+`help/help.txt`, so there is no second copy to drift from the first.
+
+| Piece | Where it lands |
+|---|---|
+| `depannix` — bash, nothing beyond what the image already has | `bin/depannix` |
+| the catalogue, as text and as JSON | `share/depannix/tools.txt`, `tools.json` |
+| the help, 16 subjects, plus an index | `share/depannix/help/`, `help.txt` |
+| bash completion | `share/bash-completion/completions/depannix` |
+| the greeting | `share/depannix/greeting.txt` |
+| the catalogue and the help as plain files | `/depannix-tools.txt`, `/depannix-help.txt` |
+
+Three things learned while building it, all now recorded where they belong:
+
+- **NixOS does not source `/etc/profile.d`.** Verified on a running system rather
+  than assumed: `/etc/profile` has no such loop, and the directory does not
+  exist. The greeting therefore hangs off `programs.bash.interactiveShellInit`.
+- **The greeting is asserted by the boot test.** It is written to the serial
+  console *before* the readiness marker, and the check greps the captured log for
+  it. What the operator reads on login was otherwise the one part of this image
+  nothing verified.
+- **The command's dependencies were checked against the manifest, not assumed.**
+  `gawk` and `findutils` are there; `sed` and `tr` were removed from the script
+  anyway, because a rescue medium should not need an installer for its own help.
+
+The cost, measured by diffing two closure manifests of the same revision
+(x86_64): **+56 800 bytes of NAR, 732 → 739 paths**, i.e. 0.002 % of the image.
+The discovery layer is content, not machinery — exactly as predicted above,
+because the tools it describes were already in the closure. The path set that
+moved is the three new derivations, the greeting text, the greet unit, and the
+usual re-generated system paths (`/etc`, `system-path`, the service units) whose
+hashes changed because `/etc/bashrc` now mentions the greeting.

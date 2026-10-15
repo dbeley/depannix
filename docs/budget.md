@@ -28,7 +28,7 @@ Measured on the ISO manifest, therefore on the artifact itself.
 | Firmware (11 packages) | **836.4 MiB** | 11 |
 | of which `linux-firmware-20260916-zstd` | 809.5 MiB | 1 |
 | Kernel modules | 145.2 MiB | 1 |
-| nixpkgs copy (`nixos-26.11…`) | 200.0 MiB | 1 |
+| NixOS module tree (`nixos-26.11…`) | 200.0 MiB | 1 |
 | `python3-3.14.7` | 136.6 MiB | 1 |
 | `systemd-261.3` | 63.0 MiB | 1 |
 | `git-2.55.0` | 56.5 MiB | 1 |
@@ -113,7 +113,9 @@ Dépannix is **135 MiB above** SystemRescue and **80 MiB below** the official
 minimal NixOS ISO. The goal is not to beat SystemRescue on size: it is to land in
 the same zone **with** a way to extend the tooling without reflashing, and with a
 publishable composition. The overhead compared with SystemRescue is the complete
-redistributable firmware and the nixpkgs copy.
+redistributable firmware and the NixOS module tree that `nixos-install` pulls in
+(200 MiB) — that path holds `nixos/` alone, not `pkgs/`, so it is a module tree
+and not a nixpkgs copy: nothing in this image can build from source offline.
 
 ## Independently verified content
 
