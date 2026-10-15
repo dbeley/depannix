@@ -16,7 +16,7 @@
       ];
 
       # CalVer version. The monthly bot rewrites it (see .github/workflows/monthly.yml).
-      version = "2026.09";
+      version = "2026.10";
 
       mkIso = system: extra: (lib.nixosSystem {
         inherit system;
