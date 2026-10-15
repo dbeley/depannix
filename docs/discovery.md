@@ -61,8 +61,9 @@ after (`nix eval .#minimal.drvPath`).
 
 2. **`depannix tools`** — the catalogue by *capability*, not by package. Every
    line is the tool, the gesture, and its figure. Flags that matter:
-   `--search <word>` (fzf is present), `--json` (jq is present), and
-   `--missing <name>`, which answers "not here — available on demand:
+   `--search <word>` (fzf is present), `--category <name>`, `--json` (jq is
+   present) — and the separate sub-command `depannix missing <command>`, which
+   answers "not here — available on demand:
 
        nix shell nixpkgs#<name>
 
@@ -80,8 +81,10 @@ after (`nix eval .#minimal.drvPath`).
    pool → `zpool import`. This is writing, not code, and it is the highest-value
    piece for a rescue medium.
 
-4. **Completion and a couple of safe aliases**, generated from the same data, so
-   `depannix <TAB>` lists the catalogue.
+4. **Completion**, generated from the same data, so `depannix <TAB>` lists the
+   sub-commands, the help subjects and the categories. The "couple of safe
+   aliases" considered here were dropped: an alias in a rescue context hides
+   which binary actually ran, at the moment the operator is least able to check.
 
 5. **The same text as files on the medium** — `/depannix-tools.txt` and
    `/depannix-help.txt` beside `/depannix-version`. Readable without running
