@@ -220,6 +220,28 @@ jobs:
           The composition is published too, and can be checked against
           `cache.nixos.org` without trusting this build. The recipe is in
           `README.txt`, next to the manifest.
+          NOTES_EOF
+
+          # Signing is optional, and the release page must not claim the opposite
+          # of what it ships: a hard-coded "not signed" section would quietly turn
+          # into a lie the day the key is configured.
+          if [ "${{ steps.sig.outputs.enabled }}" = "true" ]; then
+            cat >> dist/RELEASE_NOTES.md <<'SIGNED_EOF'
+
+          ## Signed
+
+          `SHA256SUMS` is signed with the project's minisign key:
+
+          ```bash
+          minisign -V -p depannix.pub -m SHA256SUMS
+          ```
+
+          Compare the key's fingerprint out of band before trusting it: a public
+          key fetched from the same place as the signature proves nothing by
+          itself.
+          SIGNED_EOF
+          else
+            cat >> dist/RELEASE_NOTES.md <<'UNSIGNED_EOF'
 
           ## Not signed
 
@@ -229,6 +251,10 @@ jobs:
           ```bash
           gh attestation verify <iso file> --repo dbeley/depannix
           ```
+          UNSIGNED_EOF
+          fi
+
+          cat >> dist/RELEASE_NOTES.md <<'LIMITS_EOF'
 
           ## Known limitations
 
@@ -237,7 +263,7 @@ jobs:
             here.
           - **Secure Boot must be disabled.** The image is not signed.
           - No persistence and no graphical interface in v1.
-          NOTES_EOF
+          LIMITS_EOF
 
       - name: Publish
         env:
