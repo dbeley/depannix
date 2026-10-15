@@ -12,6 +12,7 @@ on:
 permissions:
   contents: write
   pull-requests: write
+  actions: write # start CI on the pull request, see the last step
 
 jobs:
   bump:
@@ -22,7 +23,10 @@ jobs:
       - name: Install Nix
         uses: DeterminateSystems/nix-installer-action@v22
         with:
-          flakehub: false
+          # `flakehub: false` is a no-op: the input is deprecated and merely
+          # implies `determinate`, whose default is already true. The lever is
+          # `determinate: false`, which installs upstream Nix — same as ci.yml.
+          determinate: false
 
       - name: Update flake.lock
         run: nix flake update
@@ -63,3 +67,14 @@ jobs:
             **Do not merge if any test fails**: we then stay on the last green
             month. That is the rule that keeps a release from breaking silently.
           delete-branch: true
+
+      # A pull request opened with the default GITHUB_TOKEN does not trigger
+      # `pull_request` workflows: GitHub suppresses the runs created by that
+      # token, to prevent loops. Without this step the monthly PR would land with
+      # no CI at all — while its own body promises a build, two boot tests and a
+      # manifest. `workflow_dispatch` is the documented exception to that rule,
+      # which is why ci.yml accepts it.
+      - name: Start CI on the pull request
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run ci.yml --ref "release/${{ steps.version.outputs.value }}"
