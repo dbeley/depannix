@@ -25,6 +25,7 @@ let
   unknownNames = builtins.filter (e: !(builtins.hasAttr e.name pkgs)) (catalog.core ++ catalog.optional);
   missingMetadata = builtins.filter (e: e.category == "" || e.gesture == "") (catalog.core ++ shippedOptional);
   missingFigures = builtins.filter (e: !(e ? figure)) shippedOptional;
+  unknownCategories = builtins.filter (e: !(lib.elem e.category catalog.categoryOrder)) (catalog.core ++ catalog.optional);
 
   names = es: lib.concatStringsSep ", " (map (e: e.name) es);
 in
@@ -61,6 +62,12 @@ in
       {
         assertion = missingFigures == [ ];
         message = "optional tools enabled with no measured figure: ${names missingFigures}";
+      }
+      {
+        # A category nobody listed would silently drop the tool from the
+        # generated catalogue: the medium would lie by omission.
+        assertion = unknownCategories == [ ];
+        message = "tool catalogue entries whose category is not in categoryOrder, so they would vanish from the catalogue: ${names unknownCategories}";
       }
     ];
 

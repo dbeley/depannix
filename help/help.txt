@@ -1,0 +1,257 @@
+== dying-disk | A disk that clicks, stalls, or returns read errors
+
+Do not run fsck on it, and do not mount it read-write: every write can finish the
+job. Image it first, and work on the image from then on.
+
+    ddrescue -f -n /dev/sdX /mnt/other/disk.img /mnt/other/disk.map
+    ddrescue -f -r3 /dev/sdX /mnt/other/disk.img /mnt/other/disk.map
+
+The first pass copies what reads easily and does not get stuck on bad areas. The
+second retries those areas three times. The map file makes it resumable: run it
+again tomorrow, and again, and each pass takes a little more. On a failing disk,
+patience beats every clever option.
+
+Then work on the image, never on the device:
+
+    losetup -fP --read-only /mnt/other/disk.img
+    # or simply:
+    mount -o ro,loop /mnt/other/disk.img /mnt/recovered
+
+If it gives up entirely, `--idirect` bypasses the kernel cache and reads slower,
+which sometimes gets a few more sectors out.
+
+== deleted-files | Recovering files that were deleted
+
+photorec ignores the filesystem and carves known signatures out of the raw
+device. It finds files the filesystem no longer knows about, but it loses their
+names and the directory structure.
+
+    photorec /dev/sdX
+    # choose the partition, then a destination ON ANOTHER DISK
+
+Write the recovered files to another disk, never to the one you are recovering
+from: you would overwrite what you are looking for.
+
+If the partition itself is gone rather than the files, start with testdisk
+instead: `depannix help lost-partitions`.
+
+== lost-partitions | The disk is there, but its partitions are not
+
+    testdisk /dev/sdX
+
+Analyse, then let it search for lost partitions. It shows you what it finds
+before writing anything: read the list, check the sizes and the labels, and only
+write when they look right. Its log, testdisk.log, records every answer you gave.
+
+If the partition table is merely damaged rather than gone, `depannix help
+partition-table` is the shorter road.
+
+== partition-table | Repairing a GPT or an MBR
+
+Look before you touch:
+
+    gdisk -l /dev/sdX
+    parted /dev/sdX print
+
+gdisk can rebuild a corrupt primary GPT from the backup copy the disk keeps at
+its end: `gdisk /dev/sdX`, then `r` for the recovery menu, then `b` to use the
+backup. The reverse, `e`, writes a fresh primary from it too.
+
+On an MBR disk there is no backup, so keep one before you do anything:
+
+    sfdisk -d /dev/sdX > /mnt/other/sdX.sfdisk
+    dd if=/dev/sdX of=/mnt/other/mbr.bin bs=512 count=1
+
+`wipefs -a` erases the signatures and must never run before you have that copy.
+Writing a table does not touch the data inside the partitions, which is why a
+wrong table is recoverable and a wrong format is not.
+
+== filesystem-repair | Checking and repairing a filesystem
+
+Only on a disk that is healthy. A filesystem check on failing hardware makes
+things worse first: `depannix help dying-disk`.
+
+    e2fsck -f -y /dev/sdX1        # ext2/3/4; -n first, to only report
+    xfs_repair -n /dev/sdX1       # then without -n, to repair
+    btrfs check --readonly /dev/sdX1
+    fsck.f2fs /dev/sdX1
+    fsck.fat /dev/sdX1            # FAT: the EFI partition
+    ntfsfix /dev/sdX1             # clears the dirty flag, does not repair
+
+Mount read-only first and copy what you can. If an ext4 has lost its superblock,
+`mke2fs -n /dev/sdX1` lists the backup superblock positions; try them with
+`e2fsck -b <offset> /dev/sdX1`.
+
+== lvm | "My volumes disappeared"
+
+The physical volumes are usually still there. The volume group simply was not
+activated, because the machine booted from another medium.
+
+    pvscan
+    vgscan
+    vgchange -ay            # activate every volume group
+    pvs && vgs && lvs
+    mount /dev/vg0/root /mnt
+
+If a physical volume is missing from the group — a disk not plugged back in, an
+enclosure that enumerated late — the group comes up partial. `pvs` shows which
+one is absent, and `vgchange -ay --partial` activates what is left. That is a
+rescue measure, not a repair: copy the data out, then fix the group properly.
+
+Before mounting anything on a broken group, `lvmconfig` and `vgs --all` tell you
+whether an administration tool has recorded a metadata change you should look at.
+
+== luks | Opening an encrypted disk
+
+    cryptsetup luksDump /dev/sdX2          # which slots, which cipher, which LUKS
+    cryptsetup open /dev/sdX2 cryptroot
+    mount /dev/mapper/cryptroot /mnt
+
+The passphrase is asked interactively. A key file goes with `--key-file`, and a
+detached header with `--header`. When you are done:
+
+    umount /mnt && cryptsetup close cryptroot
+
+Back the header up before any repair: it holds the keys, and a damaged header is
+a lost volume.
+
+    cryptsetup luksHeaderBackup /dev/sdX2 --header-backup-file /mnt/other/header.bin
+
+== raid | Software RAID
+
+    cat /proc/mdstat                    # what the kernel sees, and its state
+    mdadm --examine /dev/sdX1           # per-disk metadata, member by member
+    mdadm --assemble --scan             # assemble what is complete
+    mdadm --assemble --scan --force     # when a member is missing
+
+A degraded array still reads. Do not "repair" it by adding a disk before you
+have copied what you need: an array that rebuilds in the wrong order destroys
+what it was protecting. Read `--examine` on every member, and compare the event
+counts — the odd one out is the one to distrust.
+
+== zfs | Importing a pool from a machine that will not boot
+
+ZFS is in this image and working.
+
+    zpool import                  # lists importable pools, with their state
+    zpool import -f tank          # -f when the pool was in use elsewhere
+    zpool import -F -n tank       # -n: show what -F would roll back; change nothing
+    zpool import -R /mnt tank     # mount it under /mnt to look inside
+
+Never use `-f` on a pool you have not first examined with `-n`: on a pool whose
+last transaction group is damaged, the options decide how much you lose.
+
+== boot-repair | The machine no longer boots
+
+This image carries grub, efibootmgr and nixos-enter.
+
+    lsblk -f
+    mount /dev/sdX2 /mnt
+    mount /dev/sdX1 /mnt/boot           # the EFI partition, if there is one
+
+    # a NixOS installation
+    nixos-enter --root /mnt
+      nixos-rebuild boot
+      exit
+
+    # any other Linux
+    mount --bind /dev /mnt/dev
+    mount --bind /proc /mnt/proc
+    mount --bind /sys /mnt/sys
+    chroot /mnt /bin/bash
+      grub-install /dev/sdX
+      grub-mkconfig -o /boot/grub/grub.cfg
+      exit
+
+Under EFI the firmware entry can be wrong while the files are right:
+
+    efibootmgr -v                          # what the firmware intends to boot
+    efibootmgr -c -d /dev/sdX -p 1 -L "Linux" -l '\EFI\BOOT\BOOTX64.EFI'
+
+If the machine does not even reach the bootloader, `depannix help memory`.
+
+== clone-disk | Copying a disk or a partition
+
+    # filesystem-aware, and it copies only what is used
+    partclone.ext4 -c -s /dev/sdX1 -o /mnt/other/sdX1.pcl
+    partclone.ext4 -r -s /mnt/other/sdX1.pcl -o /dev/sdY1
+
+    # whole filesystems, stored inside another filesystem
+    fsarchiver savefs /mnt/other/root.fsa /dev/sdX1
+    fsarchiver restfs /mnt/other/root.fsa id=0,dest=/dev/sdY1
+
+    # byte for byte, when nothing else will do
+    dd if=/dev/sdX of=/mnt/other/disk.img bs=4M status=progress conv=fsync
+    dd if=/mnt/other/disk.img of=/dev/sdY bs=4M status=progress conv=fsync
+
+Check the copy before you trust it. `dcfldd` computes a hash as it writes, and
+`sha256sum` on both sides afterwards costs one minute and saves a week.
+
+== wipe-disk | Erasing a disk
+
+    nwipe
+
+Interactive, several patterns, resumable, and it shows you exactly what it will
+destroy. Read the list of devices before starting: a multi-pass pattern on a
+large disk takes hours, and there is no undo.
+
+`wipefs -a /dev/sdX` erases only the signatures: the data stays, and the old
+partitions become harder to find afterwards. Never run it on a disk you are
+about to try to recover.
+
+== disk-health | Is this disk already dying?
+
+    smartctl -a /dev/sdX          # attributes, counters, self-test log
+    smartctl -H /dev/sdX          # the verdict, on one line
+    smartctl -t short /dev/sdX    # then read the result with -a
+    nvme smart-log /dev/nvme0     # for NVMe, which has no classic SMART
+
+Reallocated sectors, pending sectors and CRC errors are the counters worth
+reading. A disk with pending sectors can still give you its data, once:
+`depannix help dying-disk`.
+
+== network | The network is odd
+
+NetworkManager runs on this image, so the usual tools are here:
+
+    nmcli device wifi list
+    nmcli device wifi connect <ssid> password <passphrase>
+    nmtui                        # the same, as a text menu
+    ip -brief link && ip -brief addr
+    ethtool eth0                 # link, speed, duplex, errors
+    tcpdump -n -i eth0           # what actually goes past
+    nmap -sn 192.168.1.0/24      # who else is on this network
+    iperf3 -s                    # on one machine, and on the other:
+    iperf3 -c <address>
+
+Beware: an interface that is up and has an address is not a network that works.
+Check the default route with `ip route`, and the name resolution separately.
+
+== memory | The machine fails in a way that smells like RAM
+
+Memory faults imitate everything: random crashes, a filesystem that keeps getting
+corrupted, an installation that dies halfway.
+
+This image can test memory, but not while it is running from it. Reboot, and pick
+Memtest86+ in the boot menu; let it run several passes. For the inventory rather
+than the test, `dmidecode -t memory` lists what is in the slots, which is what you
+need before swapping a module.
+
+== verifying-the-medium | What is in this image, and how to prove it
+
+    depannix tools              # the catalogue, by capability
+    cat /depannix-tools.txt     # the same, as a file, without running anything
+    cat /depannix-version       # which release you are holding
+
+Every release publishes a manifest of the store paths in the image with their
+hashes, plus SHA256SUMS signed with minisign. On a machine that has network:
+
+    sha256sum -c SHA256SUMS
+    minisign -V -p depannix.pub -m SHA256SUMS
+
+The image is built by CI from a public repository and rebuilds bit for bit, so
+checking a copy against the published hashes is the whole point rather than a
+formality. Anything missing from this image can also be added on the spot, on a
+machine with network:
+
+    nix shell nixpkgs#<name>

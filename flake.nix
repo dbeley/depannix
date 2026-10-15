@@ -97,6 +97,14 @@
           cd $TMPDIR
           ${pkgs.bash}/bin/bash ${./nix/qemu-run.sh}
           cp serial.log $out/serial.log
+          # The greeting is part of what this medium claims to be. Booting is
+          # not enough: the boot test asserts what the console actually shows,
+          # otherwise the one thing the operator reads is the one thing nothing
+          # verifies.
+          if ! grep -q 'depannix tools' $out/serial.log; then
+            echo "FAIL: the greeting never reached the serial console." >&2
+            exit 1
+          fi
           echo "mode=$MODE" > $out/result
         '';
 
