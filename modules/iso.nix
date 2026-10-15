@@ -5,10 +5,16 @@ let
   cfg = config.depannix;
 in
 {
-  # Name shown in the boot menu. The nixpkgs default appends "Installer", which
-  # makes no sense for a rescue medium.
-  isoImage.prependToMenuLabel = "Dépannix — ";
-  isoImage.appendToMenuLabel = lib.mkForce "";
+  # Name shown in the boot menu. Both the nixpkgs default ("Installer") and a
+  # "Dépannix — " prefix are wrong: the label already begins with the
+  # distribution name, so the prefix produced entries reading
+  # "Dépannix — Dépannix 26.11.20261011.7fd4004".
+  #
+  # What the menu was actually missing is the release. It carries the nixpkgs
+  # label and the revision, not the CalVer that the file name and
+  # /depannix-version use, so a stick in hand could not be identified.
+  isoImage.prependToMenuLabel = "";
+  isoImage.appendToMenuLabel = lib.mkForce " (release ${cfg.version})";
   isoImage.edition = cfg.flavour;
 
   # ISO9660 label: 32 characters maximum.

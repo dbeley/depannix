@@ -226,6 +226,9 @@ artifacts — it is a single artifact, produced twice.
   accept a verbose serial log but without a rescue shell, or reverse the order
   for the machine with no screen.
 - Bit-for-bit reproducibility: **settled**, see the section above.
-- `isoImage.forceTextMode` and the additional boot entries (`copytoram`,
-  forensic mode) are not yet wired up.
+- `isoImage.forceTextMode` is not wired up, and there is no forensic-mode entry.
+  The other secondary entries (`copytoram`, `nomodeset`, `debug`, the framebuffer
+  rotations, the serial console) are not ours: the nixpkgs ISO profile generates
+  them, and they were verified present in the released image. An earlier revision
+  of this file claimed they were missing, which was false.
 - aarch64 boot test: manual, for lack of `/dev/kvm` on the ARM runners.
