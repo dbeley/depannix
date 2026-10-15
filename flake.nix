@@ -112,6 +112,12 @@
             echo "FAIL: the in-image self-test did not report on the serial console." >&2
             exit 1
           fi
+          # And the readable copies have to be where the shell lands, not only
+          # where the package lives: the self-test reports that too.
+          if ! grep -q 'DEPANNIX_SELFTEST helpfiles readable' $out/serial.log; then
+            echo "FAIL: the help files are not readable from the user's home." >&2
+            exit 1
+          fi
           echo "mode=$MODE" > $out/result
         '';
 

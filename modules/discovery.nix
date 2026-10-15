@@ -73,6 +73,16 @@ in
         tools=$(${discovery.bundle}/bin/depannix tools --json 2>/dev/null | jq -r '[.tools[] | select(.enabled)] | length' 2>/dev/null || echo 0)
         subjects=$(find ${discovery.data}/share/depannix/help -name '*.txt' ! -name index.txt 2>/dev/null | wc -l || echo 0)
         printf 'DEPANNIX_SELFTEST tools=%s subjects=%s\n' "$tools" "$subjects" > /dev/ttyS0 || true
+
+        # The readable copies have to be where the shell lands, not only where
+        # the package lives, and "the files are there" is a different claim from
+        # "the command runs". Assert the two paths the greeting names.
+        if [ -r /home/nixos/depannix-help.txt ] && [ -r /home/nixos/depannix-tools.txt ]; then
+          echo "DEPANNIX_SELFTEST helpfiles readable" > /dev/ttyS0 || true
+        else
+          echo "DEPANNIX_SELFTEST helpfiles MISSING" > /dev/ttyS0 || true
+        fi
+
         ${discovery.bundle}/bin/depannix missing phoronix-test-suite 2>&1 | head -2 > /dev/ttyS0 || true
       '';
     };
