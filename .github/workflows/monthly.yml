@@ -50,6 +50,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Open the pull request
+        id: pr
         uses: peter-evans/create-pull-request@v8
         with:
           branch: release/${{ steps.version.outputs.value }}
@@ -75,6 +76,21 @@ jobs:
       # manifest. `workflow_dispatch` is the documented exception to that rule,
       # which is why ci.yml accepts it.
       - name: Start CI on the pull request
+        if: steps.pr.outputs.pull-request-number != ''
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh workflow run ci.yml --ref "release/${{ steps.version.outputs.value }}"
+
+      # A month in which nixpkgs has not moved and the version is already current
+      # produces no diff, and therefore no branch: the dispatch above then fails
+      # with an HTTP 422 on a ref that was never created. Say so instead. This is
+      # the normal case if the job is re-run inside the same month.
+      - name: Nothing to release this month
+        if: steps.pr.outputs.pull-request-number == ''
+        run: |
+          {
+            echo "### Nothing to release this month"
+            echo
+            echo "nixpkgs is already at the pinned revision and the version is"
+            echo "current, so no pull request was opened and no CI was started."
+          } >> "$GITHUB_STEP_SUMMARY"
