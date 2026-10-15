@@ -148,6 +148,16 @@ Two successive builds of the manifest likewise produced the same digests
   minisign signs the checksums, not the boot chain. This is the main gap
   compared to Parted Magic, and a project in its own right (signed shim, MOK
   enrollment).
+- **Multiboot launchers are untested, and partial by construction.** The image
+  boots on its own — that is the `dd` path the CI exercises — or from a launcher
+  that provides `iso_path`, the convention grubfm follows and the nixpkgs ISO
+  template uses in `findiso=${iso_path}`. Ventoy does not provide it: it relies
+  on injecting its own hook instead, which only its normal Linux path performs.
+  Its secondary "Grub2 Mode" therefore cannot boot this image — that path falls
+  back to loading the ISO's own configuration without the injection, and the
+  kernel starts with a command line that is not the one the image wrote (observed:
+  `initrd-find-nixos-closure` failing with "No init= parameter"). Use the plain
+  entry, or write the stick with `dd`.
 - **No graphical interface** in v1. A deliberate choice: GNOME costs ~1.1 GiB of
   store for `nautilus` alone, and automatic disk mounting is precisely what you
   must not have during data recovery.
