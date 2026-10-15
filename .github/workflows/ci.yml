@@ -124,6 +124,13 @@ jobs:
     needs: build
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-24.04
+    # download-artifact preserves the structure the upload used. The upload
+    # matched two path patterns, so the least common ancestor is the repository
+    # root and the files keep their prefixes. Verified by downloading an artifact
+    # and listing it, rather than by reading the action's documentation.
+    env:
+      ISO_DIR: dist/result-iso/iso
+      MANIFEST_DIR: dist/result-manifest
     steps:
       - uses: actions/checkout@v5
 
@@ -135,9 +142,11 @@ jobs:
 
       - name: Checksums
         run: |
-          cd dist
-          sha256sum ./*.iso > SHA256SUMS
-          cat SHA256SUMS
+          ls -l "$ISO_DIR" "$MANIFEST_DIR"
+          # Strip the directory prefix so the sums carry bare file names and
+          # `sha256sum -c SHA256SUMS` works from the download directory.
+          sha256sum "$ISO_DIR"/*.iso | sed "s|$ISO_DIR/||" > dist/SHA256SUMS
+          cat dist/SHA256SUMS
 
       # Signing stays optional: the job must not fail when the secret is not
       # configured, but we want to know whether it happened.
@@ -190,15 +199,15 @@ jobs:
           # the proof but not the instructions would be a strange kind of
           # honesty.
           files=(
-            dist/*.iso
+            "$ISO_DIR"/*.iso
             dist/SHA256SUMS
-            dist/store-paths.txt
-            dist/closure.json
-            dist/closure-sri.tsv
-            dist/total-nar-size.txt
-            dist/nix-path-registration.txt
-            dist/MANIFEST.sha256
-            dist/README.txt
+            "$MANIFEST_DIR"/store-paths.txt
+            "$MANIFEST_DIR"/closure.json
+            "$MANIFEST_DIR"/closure-sri.tsv
+            "$MANIFEST_DIR"/total-nar-size.txt
+            "$MANIFEST_DIR"/nix-path-registration.txt
+            "$MANIFEST_DIR"/MANIFEST.sha256
+            "$MANIFEST_DIR"/README.txt
           )
           if [ -f dist/SHA256SUMS.minisig ]; then
             files+=(dist/SHA256SUMS.minisig)
