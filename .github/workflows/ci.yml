@@ -265,7 +265,8 @@ jobs:
           - **The aarch64 boot test is manual.** The free arm64 runners expose no
             `/dev/kvm`, so the aarch64 ISO is built and attested but not booted
             here.
-          - **Secure Boot must be disabled.** The image is not signed.
+          - **Secure Boot must be disabled.** The image carries no Secure Boot
+            signature: minisign signs the checksums, not the boot chain.
           - No persistence and no graphical interface in v1.
           LIMITS_EOF
 

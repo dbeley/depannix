@@ -7,8 +7,7 @@ composition you can publish.
 **Status: the first release is published.**
 [`v2026.10`](https://github.com/dbeley/depannix/releases/tag/v2026.10) was built
 end to end by CI, tested in BIOS and EFI under KVM, its composition verified
-against `cache.nixos.org`. The release is unsigned: no minisign key is configured
-yet.
+against `cache.nixos.org`. `SHA256SUMS` is signed with minisign.
 
 | | |
 |---|---|
@@ -29,11 +28,14 @@ and aarch64, plus the composition manifest. Write it to a USB stick with `dd`
 
 ```bash
 sha256sum -c SHA256SUMS
+minisign -V -p depannix.pub -m SHA256SUMS
 gh attestation verify depannix-minimal-2026.10-x86_64-linux.iso --repo dbeley/depannix
 ```
 
 `gh attestation verify` exits 0 when the attestation is found and valid, and 1
-with an HTTP 404 when the file has none.
+with an HTTP 404 when the file has none. The signing key id is
+`9B9991F6C6D6836C`: compare it out of band, since `depannix.pub` ships from the
+same place as the signature it validates.
 
 ## Getting started
 
@@ -142,9 +144,8 @@ Two successive builds of the manifest likewise produced the same digests
 
 ## Known limitations
 
-- **Unsigned release.** No minisign key is configured yet, so `SHA256SUMS` ships
-  without a signature; the provenance attestation is the available alternative.
-- **Secure Boot: must be disabled.** The ISO isn't signed. This is the main gap
+- **Secure Boot: must be disabled.** The ISO carries no Secure Boot signature —
+  minisign signs the checksums, not the boot chain. This is the main gap
   compared to Parted Magic, and a project in its own right (signed shim, MOK
   enrollment).
 - **No graphical interface** in v1. A deliberate choice: GNOME costs ~1.1 GiB of
@@ -164,10 +165,11 @@ Two successive builds of the manifest likewise produced the same digests
 
 - **v0.1 — done.** Minimal flavor, ISO built end to end, boot tested in BIOS and
   EFI, composition manifest verified, size and boot guardrails in CI.
-- **v0.2 — in progress.** CI is green on both architectures, the ISO rebuilds
-  identically on another machine, and `v2026.10` is published. What remains is the
-  signed release (minisign key to create, unencrypted: minisign doesn't read a
-  password from the environment) and the `aarch64` boot test, to be done by hand.
+- **v0.2 — done.** CI is green on both architectures, the ISO rebuilds identically
+  on another machine, `v2026.10` is published and signed (minisign key id
+  `9B9991F6C6D6836C`), and each architecture ships its own manifest under a name
+  that says which one it is. What remains is the `aarch64` boot test, to be done by
+  hand: the free arm64 runners expose no `/dev/kvm`.
 - **v0.3** — automatic monthly release, blocking size budget and boot test.
 - **v1.0** — complete verification documentation.
 - **v2** — persistence, then possibly a graphical flavor.
