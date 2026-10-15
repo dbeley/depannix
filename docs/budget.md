@@ -122,13 +122,14 @@ Verification is therefore done by a simple GET, without Nix and without granting
 any trust to the build author:
 
 ```bash
-awk '!/^#/ {print $1}' closure-sri.tsv | while read -r p; do
+awk '!/^#/ {print $1}' closure-sri-x86_64-linux.tsv | while read -r p; do
   h=$(basename "$p")
   curl -s "https://cache.nixos.org/${h%%-*}.narinfo" | sed -n 's/^NarHash: //p'
 done
 ```
 
-Result measured on the 2026.10 image:
+Result measured on the x86_64-linux 2026.10 image (the closure differs per
+architecture, and each file of the manifest is named after one):
 
 | | |
 |---|---|
@@ -140,8 +141,8 @@ Result measured on the 2026.10 image:
 The 47 paths not verifiable this way are the NixOS system itself, the generated
 `/etc` files and the systemd units. For those, only rebuilding is authoritative —
 hence the value of the observed stability: two successive builds produced the
-same fingerprints for `closure.json` (`3140438d…`) and `store-paths.txt`
-(`888e156f…`).
+same fingerprints for `closure-x86_64-linux.json` (`3140438d…`) and
+`store-paths-x86_64-linux.txt` (`888e156f…`).
 
 ## The rule
 

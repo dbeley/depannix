@@ -96,7 +96,7 @@ trusting whoever produced it.
 | `flake.lock` (versioned) | the exact nixpkgs revision, and therefore the whole dependency tree |
 | `closure-manifest` | the exhaustive list of embedded store paths + their hashes |
 | `SHA256SUMS` | the published ISO is the one whose bytes were measured |
-| minisign signature | that nobody altered it after the fact — **not configured yet** |
+| minisign signature | that nobody altered it after the fact |
 | provenance attestation (CI) | the artifact came out of this workflow, on this commit |
 
 Verification:
@@ -106,12 +106,14 @@ Verification:
 sha256sum -c SHA256SUMS
 
 # 2. its composition is the one in the published manifest — without Nix, and
-#    without trusting whoever built the image: one plain GET per package
-awk '!/^#/ {print $1}' closure-sri.tsv | while read -r p; do
+#    without trusting whoever built the image: one plain GET per package.
+#    Take the manifest whose name matches the ISO you downloaded: the closure
+#    differs between architectures, so every file is named after one.
+awk '!/^#/ {print $1}' closure-sri-x86_64-linux.tsv | while read -r p; do
   h=$(basename "$p")
   curl -s "https://cache.nixos.org/${h%%-*}.narinfo" | sed -n 's/^NarHash: //p'
 done
-# then compare each value against the narHash field of closure.json
+# then compare each value against the narHash field of closure-x86_64-linux.json
 
 # 3. you can rebuild the exact same system
 git checkout <tag> && nix build .#minimal
@@ -120,10 +122,12 @@ git checkout <tag> && nix build .#minimal
 gh attestation verify depannix-minimal-2026.10-x86_64-linux.iso --repo dbeley/depannix
 ```
 
-Measured on the 2026.10 image: **685 of the 732 paths** are confirmed identical
-by `cache.nixos.org`, **zero divergence**. The other 47 are derived locally (the
-NixOS system itself, the generated `/etc`, the systemd units): they exist in no
-binary cache, and for those only a rebuild is authoritative.
+Measured on the x86_64-linux 2026.10 image: **685 of the 732 paths** are confirmed
+identical by `cache.nixos.org`, **zero divergence**. The other 47 are derived
+locally (the NixOS system itself, the generated `/etc`, the systemd units): they
+exist in no binary cache, and for those only a rebuild is authoritative. The
+counts differ per architecture, and the aarch64 coverage has not been measured —
+so it is not claimed here.
 
 The bit-for-bit reproducibility of the ISO is **established**, and it is the
 most important result of the project. The same revision, built on the GitHub
@@ -133,7 +137,8 @@ sector count** (744,016). Two distinct environments, a single artifact: a third
 party can therefore rebuild the image and compare it to ours.
 
 Two successive builds of the manifest likewise produced the same digests
-(`closure.json` → `3140438d…`, `store-paths.txt` → `888e156f…`).
+(`closure-x86_64-linux.json` → `3140438d…`,
+`store-paths-x86_64-linux.txt` → `888e156f…`).
 
 ## Known limitations
 

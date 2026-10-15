@@ -202,7 +202,11 @@ jobs:
                 'BEGIN { printf "| `%s` | %d bytes (%.1f MiB) |\n", f, s, s / 1048576 }'
             done
             echo
-            echo "**Store contents:** $(wc -l < "$MANIFEST_DIR"/store-paths.txt) paths, $(cat "$MANIFEST_DIR"/total-nar-size.txt) bytes of NAR."
+            echo "One manifest per architecture, each file named after the one it describes:"
+            echo
+            for s in x86_64-linux aarch64-linux; do
+              echo "- **$s**: $(wc -l < "$MANIFEST_DIR"/store-paths-$s.txt) store paths, $(cat "$MANIFEST_DIR"/total-nar-size-$s.txt) bytes of NAR."
+            done
             echo
             echo '```'
             cat dist/SHA256SUMS
@@ -219,7 +223,7 @@ jobs:
 
           The composition is published too, and can be checked against
           `cache.nixos.org` without trusting this build. The recipe is in
-          `README.txt`, next to the manifest.
+          `README-<system>.txt`, next to the manifest.
           NOTES_EOF
 
           # Signing is optional, and the release page must not claim the opposite
@@ -281,14 +285,22 @@ jobs:
           files=(
             "$ISO_DIR"/*.iso
             dist/SHA256SUMS
-            "$MANIFEST_DIR"/store-paths.txt
-            "$MANIFEST_DIR"/closure.json
-            "$MANIFEST_DIR"/closure-sri.tsv
-            "$MANIFEST_DIR"/total-nar-size.txt
-            "$MANIFEST_DIR"/nix-path-registration.txt
-            "$MANIFEST_DIR"/MANIFEST.sha256
-            "$MANIFEST_DIR"/README.txt
           )
+          # Both architectures ship a manifest, and every file name carries the
+          # system it describes. Publishing one un-suffixed set is what allowed the
+          # two to overwrite each other, leaving the release with a manifest
+          # matching an unstated architecture.
+          for s in x86_64-linux aarch64-linux; do
+            files+=(
+              "$MANIFEST_DIR"/store-paths-$s.txt
+              "$MANIFEST_DIR"/closure-$s.json
+              "$MANIFEST_DIR"/closure-sri-$s.tsv
+              "$MANIFEST_DIR"/total-nar-size-$s.txt
+              "$MANIFEST_DIR"/nix-path-registration-$s.txt
+              "$MANIFEST_DIR"/MANIFEST-$s.sha256
+              "$MANIFEST_DIR"/README-$s.txt
+            )
+          done
           if [ -f dist/SHA256SUMS.minisig ]; then
             files+=(dist/SHA256SUMS.minisig)
           fi
