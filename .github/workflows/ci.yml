@@ -185,6 +185,60 @@ jobs:
         env:
           MINISIGN_KEY: ${{ secrets.MINISIGN_SECRET_KEY }}
 
+      - name: Release notes
+        run: |
+          # Generated rather than left to --generate-notes, which on a first
+          # release produces nothing but a changelog link. The release page is
+          # where a visitor lands: it should say what the artefact is, how to
+          # verify it, and what it does not do.
+          {
+            echo "Minimal NixOS rescue ISO: diagnosis, benchmarks, repair,"
+            echo "partitioning and cloning. Boot tested under KVM by CI."
+            echo
+            echo "| asset | size |"
+            echo "|---|---|"
+            for iso in "$ISO_DIR"/*.iso; do
+              awk -v f="$(basename "$iso")" -v s="$(stat -c%s "$iso")" \
+                'BEGIN { printf "| `%s` | %d bytes (%.1f MiB) |\n", f, s, s / 1048576 }'
+            done
+            echo
+            echo "**Store contents:** $(wc -l < "$MANIFEST_DIR"/store-paths.txt) paths, $(cat "$MANIFEST_DIR"/total-nar-size.txt) bytes of NAR."
+            echo
+            echo '```'
+            cat dist/SHA256SUMS
+            echo '```'
+          } > dist/RELEASE_NOTES.md
+
+          cat >> dist/RELEASE_NOTES.md <<'NOTES_EOF'
+
+          ## Verify
+
+          ```bash
+          sha256sum -c SHA256SUMS
+          ```
+
+          The composition is published too, and can be checked against
+          `cache.nixos.org` without trusting this build. The recipe is in
+          `README.txt`, next to the manifest.
+
+          ## Not signed
+
+          No minisign key is configured yet, so `SHA256SUMS` ships unsigned. The
+          build provenance attestation is the available alternative:
+
+          ```bash
+          gh attestation verify <iso file> --repo dbeley/depannix
+          ```
+
+          ## Known limitations
+
+          - **The aarch64 boot test is manual.** The free arm64 runners expose no
+            `/dev/kvm`, so the aarch64 ISO is built and attested but not booted
+            here.
+          - **Secure Boot must be disabled.** The image is not signed.
+          - No persistence and no graphical interface in v1.
+          NOTES_EOF
+
       - name: Publish
         env:
           GH_TOKEN: ${{ github.token }}
@@ -214,5 +268,5 @@ jobs:
           fi
           gh release create "${GITHUB_REF_NAME}" \
             --title "Dépannix ${GITHUB_REF_NAME}" \
-            --generate-notes \
+            --notes-file dist/RELEASE_NOTES.md \
             "${files[@]}"
