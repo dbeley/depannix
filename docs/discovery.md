@@ -38,6 +38,13 @@ missing half at the same time. It was "no tool without its closure figure", it i
 now also "no tool without its gesture", enforced by an assertion. Both were tested
 by inserting bad entries and reading the refusal.
 
+Two images now read that catalogue, so an entry also says which flavours carry it
+(`flavours`, absent meaning both). Without it the minimal catalogue would have to
+list Firefox, and the desktop one would have to list labwc: a catalogue that
+advertises what the image does not carry is worse than no catalogue. A typo in a
+flavour name is refused at evaluation, because such an entry would ship in no
+image at all and nobody would see it go.
+
 ## The bricks
 
 1. **A greeting at login**, generated at build time so it cannot name the wrong

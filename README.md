@@ -15,12 +15,31 @@ the rescue distributions you already know:
 - **Its composition is published and provable.** Every release ships the list of
   embedded store paths with their hashes, and the image rebuilds bit for bit.
 
+## Two images
+
+The project ships two flavours, because a rescue medium and a usable desktop are
+not the same budget:
+
+- **`minimal`**, the small one: a console, plus `depannix gui`, a bare Wayland
+  session to start on demand. It carries no graphical application, measured
+  rather than assumed: on Wayland a GTK program cannot draw a pixel without
+  OpenGL, and OpenGL costs 826 MiB here, more than half the image.
+- **`desktop`**: the same, plus GNOME on Wayland and Firefox. It is the flavour
+  for a machine you can no longer boot but can still use, where reading the
+  documentation of the hardware is the point. It carries the graphical rescue
+  tools too, since GNOME has already paid for the driver.
+
+Both are built for x86_64 and aarch64, both are boot tested under KVM by CI, and
+both report the session they started on the serial console. "The session works"
+is checked there, screenshot and all, rather than asserted.
+
 ## Download
 
-[`v2026.10`](https://github.com/dbeley/depannix/releases/tag/v2026.10) has the
-x86_64 and the aarch64 image. The image is the file named
-`depannix-minimal-<release>-<system>.iso`: the other assets are the proof of what
-is inside it.
+[`v2026.10`](https://github.com/dbeley/depannix/releases/tag/v2026.10) has four
+images: two flavours, two architectures. Take the file you want, the one ending in
+`.iso`: `depannix-minimal-<release>-<system>.iso` or
+`depannix-desktop-<release>-<system>.iso`. The other assets are the proof of what
+is inside them.
 
 Write it to a whole device, never to a partition:
 
@@ -53,6 +72,7 @@ You are root on a live medium: nothing here survives a reboot.
   depannix tools        what this image carries
   depannix help         what to do about a failure (subjects, one per file)
   ~/depannix-help.txt   the same as a file, and on the stick at /iso
+  depannix gui          a Wayland session, without a desktop on top
 ```
 
 `depannix` answers the question you actually have at that point, which is not
@@ -62,8 +82,9 @@ You are root on a live medium: nothing here survives a reboot.
 depannix tools                    # the catalogue, by capability, through less
 depannix tools --search raid      # fuzzy, through fzf
 depannix tools --category benchmark
-depannix help                     # the 17 subjects covered
+depannix help                     # the 18 subjects covered
 depannix help dying-disk          # one of them, in full
+depannix gui                      # a graphical session, if the console is not enough
 depannix missing photorec         # is it here? and how to get it if not
 ```
 
@@ -80,8 +101,8 @@ phoronix-test-suite: in the catalogue, but not in this image.
 
 The subjects covered are: a disk that is failing, deleted files, a lost partition
 table, a damaged filesystem, LVM, LUKS, RAID, ZFS, a machine that no longer
-boots, cloning a disk, erasing one, SMART, the network, memory, benchmarks, and
-how to verify this very medium.
+boots, cloning a disk, erasing one, SMART, the network, memory, benchmarks, a
+graphical session, and how to verify this very medium.
 
 The catalogue and the help are also plain files, in the home directory you land
 in (`~/depannix-tools.txt`, `~/depannix-help.txt`) and at the root of the stick,
@@ -89,8 +110,9 @@ readable from a machine you cannot boot at all.
 
 ## What is inside
 
-The selection is small on purpose: **58 tools**, so that every failure mode has a
-tool and every tool has a reason.
+The selection is small on purpose: **69 tools** in the minimal image, **66** in
+the desktop one, so that every failure mode has a tool and every tool has a
+reason.
 
 | | |
 |---|---|
@@ -101,11 +123,14 @@ tool and every tool has a reason.
 | network | iperf3, nmap, tcpdump, socat |
 | comfort | jq, zstd, file, lsof, strace, tmux, screen, rsync, nano, less |
 | discovery | fzf, ripgrep, fd, and the `depannix` command itself |
+| graphics | minimal: labwc, foot, swaybg, grim, slurp, wl-clipboard, mako, wlr-randr, kanshi, swaylock, wayland-utils. desktop, in addition: gnome-shell, firefox, pipewire, gparted, gnome-disk-utility, glmark2, vkmark, clpeak |
 
 The heavy tools stay in the catalogue with their measured size, one build flag
-away: gparted (385 MiB), phoronix-test-suite (606 MiB), guymager (2540 MiB),
-gsmartcontrol (317 MiB), neovim (262 MiB), fish (309 MiB). `docs/budget.md` holds
-the measured closure of everything.
+away: guymager (2540 MiB), gnome-system-monitor (1009 MiB), phoronix-test-suite
+(606 MiB), gsmartcontrol (317 MiB), fish (309 MiB), neovim (262 MiB). Those
+figures are individual closures, which is a way of ranking and not a way of
+budgeting: over a running GNOME session, `gnome-system-monitor` costs 26 MiB and
+`gsmartcontrol` 20 MiB. `docs/budget.md` holds both sets of measurements.
 
 ## Extending it without reflashing
 
@@ -123,13 +148,14 @@ from inside the image.
 
 ## Verifying the contents
 
-Each release publishes four things per architecture:
+Each release publishes, per flavour and per architecture, the image, its manifest
+in two encodings, and the signed checksums:
 
 | file | what it is for |
 |---|---|
-| `depannix-minimal-<release>-<system>.iso` | the image |
-| `closure-<system>.json` | every embedded store path, with its NAR hash and size |
-| `closure-sri-<system>.tsv` | the same paths and hashes, in the encoding narinfo files use |
+| `depannix-<flavour>-<release>-<system>.iso` | the image |
+| `closure-<flavour>-<system>.json` | every embedded store path, with its NAR hash and size |
+| `closure-sri-<flavour>-<system>.tsv` | the same paths and hashes, in the encoding narinfo files use |
 | `SHA256SUMS` and `SHA256SUMS.minisig` | the hashes of all of the above, signed |
 
 Checking the composition needs no Nix and no trust in whoever ran the build, only
@@ -142,12 +168,13 @@ minisign -V -p depannix.pub -m SHA256SUMS
 
 # 2. every package that came from nixpkgs matches the published hash. Take the
 #    manifest whose name matches the image you downloaded: the closure differs
-#    between architectures.
-awk '!/^#/ {print $1}' closure-sri-x86_64-linux.tsv | while read -r p; do
+#    between flavours and between architectures.
+awk '!/^#/ {print $1}' closure-sri-minimal-x86_64-linux.tsv | while read -r p; do
   h=$(basename "$p")
   curl -s "https://cache.nixos.org/${h%%-*}.narinfo" | sed -n 's/^NarHash: //p'
 done
-# then compare each value against the narHash field of closure-x86_64-linux.json
+# then compare each value against the narHash field of
+# closure-minimal-x86_64-linux.json
 
 # 3. the image came out of this repository, on a known commit
 gh attestation verify depannix-minimal-*.iso --repo dbeley/depannix
@@ -160,11 +187,13 @@ can confirm them except a rebuild, which is what the next section is for.
 ## Building it yourself
 
 ```bash
-nix build .#minimal          # the release image, zstd-19 compression
-nix build .#minimal-fast     # the same, fast compression, for iterating
-nix run                      # boot it in QEMU
-MODE=efi nix run             # the same, with EFI firmware
-nix flake check              # BIOS and EFI boot tests, then the size guard
+nix build .#minimal            # the console image, zstd-19 compression
+nix build .#desktop            # the GNOME image, same compression
+nix build .#minimal-fast       # either one with fast compression, to iterate
+nix run                        # boot the minimal image in QEMU
+GUI=1 nix run .#vm-desktop     # the desktop one, with a VNC display to watch
+MODE=efi nix run               # the same, with EFI firmware
+nix flake check                # boot tests, session tests, size guards
 ```
 
 Two builds of the same revision, on two different machines, produce the same
@@ -198,9 +227,14 @@ worth anything.
   image.
 - **The aarch64 boot test is manual.** Free arm64 runners expose no `/dev/kvm`,
   so the aarch64 image is built and attested but not booted in CI.
-- **No persistence, and no graphical interface.** Both are deliberate: automatic
-  disk mounting is the last thing you want during data recovery. A graphical
-  flavour would cost about 1.1 GiB for `nautilus` alone.
+- **No persistence.** Nothing you do in a session survives a reboot: this is a
+  live medium, and v1 has no way to keep anything on the stick.
+- **The disks you plug in are not mounted for you.** Automount is off in both
+  images, GNOME included, where the default would mount, write to, and replay the
+  journal of the very disk being rescued. Mount explicitly, read-only first.
+- **The minimal image's session carries no graphical application.** On Wayland a
+  GTK program needs OpenGL, which costs 826 MiB of the image, so everything with
+  a screen there is GPU-free. Partitioning with a screen is in the desktop image.
 - **`root` and `nixos` have no password** in a session, like any live medium. Do
   not leave the stick plugged into a networked machine.
 
@@ -216,10 +250,14 @@ modules/base.nix             foundation: firmware, kernel, licences, SSH, marker
 modules/tools.nix            wiring built from the catalogue, with assertions
 modules/iso.nix              name, boot menu, compression, volume
 modules/discovery.nix        greeting, shell hook, files on the medium
+modules/wayland.nix          the minimal image's Wayland session: labwc
+modules/desktop.nix          the desktop image: GNOME, Firefox, no automount
+nix/session-minimal.sh       starts the labwc session, and reports it
+nix/session-report.sh        reports the GNOME session, from inside the session
 nix/tool-catalog.nix         the catalogue: name, category, gesture
 nix/discovery-bundle.nix     generates the command, the catalogue and the help
 nix/depannix.sh              the `depannix` command itself
 help/help.txt                the procedures, written by hand
-nix/qemu-run.sh              QEMU launch: interactive, or marker-based test
+nix/qemu-run.sh              QEMU launch: interactive, marker test, or graphical test
 nix/closure-manifest.nix     the composition manifest, which is the proof
 ```

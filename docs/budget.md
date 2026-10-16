@@ -152,6 +152,91 @@ redistributable firmware and the NixOS module tree that `nixos-install` pulls in
 (200 MiB). That path holds `nixos/` alone, not `pkgs/`: it is a module tree and
 not a nixpkgs copy, and nothing in this image can build from source offline.
 
+## Cost of the graphical flavours
+
+Measured the same way as everything else here: by walking narinfo references
+against the 777 paths of the console image, and counting only what is new. The ISO
+column applies this image's own store-to-ISO ratio, 40 to 57%, which is why it is
+a range.
+
+**That method has a blind spot, and it bit here.** The hand-composed figures below
+describe packages, not the *modules* that pull them in: `programs.labwc.enable`
+drags `services.graphical-desktop`, which enables OpenGL by default, and mesa alone
+is 826 MiB. Composed by hand, the session promised +170 MiB of NAR; built, the ISO
+grew by 790 MiB. With the graphics stack turned off and the same session built
+again, the growth is 238 MiB in fast compression. The lesson is the project's own
+rule applied to itself: only the built image holds authority, and a narinfo walk
+ranks, it does not budget.
+
+The two closure manifests, diffed path by path, which is the only figure that
+separates the session's own content from the machinery around it:
+
+| | console image | + Wayland session | added |
+|---|---|---|---|
+| store paths | 777 | 1071 | **+294** |
+| NAR, uncompressed | 2640.6 MiB | 3291.0 MiB | **+669 MiB** |
+| ISO, fast compression | 1589 MiB | 1827 MiB | **+238 MiB** |
+| paths containing `mesa` | 1 | 1 | **0** |
+
+That last line is the point of the exercise: the image carries a `gbm` library by
+name and no OpenGL driver at all.
+
+The added paths are not all session. `flite`, `freepats`, `ffmpeg`, `gstreamer`,
+`x265` and `pipewire` account for about 200 MiB of speech and media libraries that a
+rescue session never opens - they arrive with the module that provides the session,
+not with the compositor. If the session stays, that is where the next saving is, and
+it is a saving to be measured rather than assumed.
+
+### The minimal image's session
+
+These rows rank the candidates against each other; they do not budget the session.
+The budget is the measured diff above - **+294 paths, +669 MiB of NAR, +238 MiB of
+ISO** - and every row here is smaller than the sum of its parts for the same reason
+a package closure is smaller than the image it lands in.
+
+| stack | + paths | new NAR | ISO |
+|---|---|---|---|
+| `labwc` + `foot` + a font | +64 | 158.7 MiB | 63 to 91 MiB |
+| + `swaybg`, `grim`, `slurp`, `wlr-randr`, `swaylock`, `wl-clipboard`, `mako`, `kanshi` | +12 | 11.2 MiB | 4 to 6 MiB |
+| + `mesa`, pulled in by the module rather than asked for | +9 | **826.3 MiB** | **331 to 475 MiB** |
+| + `fuzzel` (left out) | | 41.3 MiB | |
+| + `yambar` (left out) | | 248.8 MiB | |
+| + `dolphin` (left out) | | 988 MiB | |
+| + `mesa` and `glmark2` (left out) | | 1303.8 MiB | |
+
+Everything the minimal session ships is GPU-free, so the second row is the only
+one that costs money and the only one that is refused: the image keeps the
+compositor's software renderer and gives up every GTK application, because on
+Wayland one cannot exist without the other.
+
+### The desktop image
+
+| stack | + paths | new NAR | ISO |
+|---|---|---|---|
+| GNOME + Firefox + mesa + mounted USB | +383 | 2707.5 MiB | 1083 to 1557 MiB |
+| + `gnome-disk-utility`, once GTK4 is paid for | | 15.1 MiB | 6 to 9 MiB |
+| + `gparted` | | 20.7 MiB | 8 to 12 MiB |
+| + `glmark2`, `vkmark`, `clpeak` | +16 | 37.0 MiB | 15 to 21 MiB |
+| + `gnome-system-monitor` (catalogue only) | | 25.7 MiB | 10 to 15 MiB |
+| + `gsmartcontrol` (catalogue only) | | 20.1 MiB | 8 to 12 MiB |
+
+The GPU benchmarks are the clearest illustration of what marginal cost means.
+`glmark2` is 113.8 MiB of closure through the binary cache on its own, and 19.4
+MiB once a desktop session has already paid for mesa. In the minimal image the
+same package costs 1304 MiB, because it brings the driver with it. Same package, a
+factor of 68 between the two images: that is why the catalogue carries a `flavours`
+field rather than one global list.
+
+`gnome-disk-utility` illustrates the other lesson, which is that the naive
+catalogue figure is a ranking and not a budget. Its individual closure is 1318 MiB,
+its marginal cost over the minimal session is +318 MiB of NAR, because it adds GTK4
+to a GTK3 that labwc already brought, and its marginal cost over the desktop session
+is **+15.1 MiB**, because GNOME brought GTK4 and udisks2 already. Three true
+numbers, one package, and only the last one describes the decision actually made:
+it ships in the desktop image. This is why the catalogue carries a `flavours` field
+rather than one global list, and why the project's rule needed the second half of
+its sentence - a figure, and the gesture it pays for.
+
 ## Independently verified content
 
 The manifest publishes every path with its hash, in base32 **and** in SRI.
@@ -164,8 +249,9 @@ nix hash convert --to sri "$(curl -s https://cache.nixos.org/<hash>.narinfo \
   | sed -n 's/^NarHash: //p')"
 ```
 
-Result measured on the current x86_64-linux closure, 777 paths (the closure
-differs per architecture, and each file of the manifest is named after one):
+Result measured on the x86_64-linux closure of the published 2026.10 console image,
+777 paths. The count is per flavour and per architecture, so the recipe below means
+nothing unless the manifest names the same image that was downloaded:
 
 | | |
 |---|---|
@@ -183,10 +269,11 @@ rebuilding is authoritative.
 > **No tool enters the ISO without its closure figure.**
 
 Not out of stinginess, but because a rescue medium whose composition is unknown is
-not a rescue medium. The `checks.size-budget` guard (1800 MiB) fails in CI if the
-ISO drifts, and this document must be updated at the same time as
-`nix/tool-catalog.nix`, which is what builds the image.
+not a rescue medium. The size guards - `checks.size-budget-minimal` at 1800 MiB and
+`checks.size-budget-desktop` at 3800 MiB - fail in CI if an image drifts, and this
+document must be updated at the same time as `nix/tool-catalog.nix`, which is what
+builds the images.
 
 Corollary, learned the hard way: the figure must come from the **artifact**, not
-from a model of the artifact. `nix build .#closure-manifest` exists for that, and
-it is what holds authority, including against this document.
+from a model of the artifact. `nix build .#closure-manifest-minimal` exists for
+that, and it is what holds authority, including against this document.

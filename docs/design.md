@@ -51,18 +51,110 @@ from the **monolithic** `linux-firmware` package, whereas the image embeds the
 largest line item, but at 34% and not 70%: the hierarchy of priorities was wrong,
 not only the amount.
 
-## Why no graphical interface
+## The two flavours, and why these two
 
-Two reasons, quantified rather than aesthetic:
+For a long time this image had no graphical interface, for a quantified reason:
+`nautilus` alone is 1162 MiB of closure, and the graphical ISO of NixOS weighs
+3574 MiB against 1533 MiB for the minimal one. The question is not whether a
+session with a screen is pleasant, it is what it costs and what it buys - and the
+answer differs between two jobs, so the project now ships two images.
 
-- `nautilus` alone is 1162 MiB of closure, `gparted` 385 MiB, `gsmartcontrol`
-  317 MiB. The official NixOS graphical ISO weighs 3574 MiB against 1533 MiB for
-  the minimal one.
-- GNOME Files mounts automatically anything that is plugged in, which is exactly
-  the gesture that writes to the system you are trying to save.
+**`minimal`: the console, plus a Wayland session on demand.** `depannix gui`
+starts `labwc`, a compositor with no desktop environment on top of it. The
+cheapest session worth having, and the ceiling is not where hand-composed
+measurements put it: the module that brings labwc pulls `services.graphical-desktop`
+with it, which turns OpenGL on by default and adds **826 MiB** of mesa, more than
+half the image. Composed by hand at the narinfo level, the session looked like
++170 MiB of NAR; built, it was +790 MiB of ISO. The trims below are therefore real
+measurements, but the thing that had to be refused first was the graphics stack
+itself:
 
-If a graphical flavour arrives, it will need automount disabled and a dedicated
-boot entry.
+| candidate | marginal cost | kept |
+|---|---|---|
+| `swaybg`, `grim`, `slurp`, `wlr-randr`, `swaylock`, `mako`, `kanshi` | +7.9 MiB | yes |
+| `wl-clipboard` | +3.1 MiB | yes |
+| `fuzzel`, a launcher | +41.3 MiB | no, labwc has a root menu |
+| `yambar`, a bar | +248.8 MiB: it pulls ffmpeg and pipewire | no |
+| `dolphin`, a file manager | +988 MiB | no |
+| `gparted` | +14 MiB over labwc, which is not the driver's cost | desktop only |
+| `mesa`, to have any GTK program at all | **+826 MiB** | **no** |
+
+That last row is the decision the rest of this section follows from. On Wayland a
+GTK application cannot draw a pixel without a GL driver, so "a session with a
+partition editor in it" is not a session plus 14 MiB, it is a session plus 826 MiB.
+The image takes the half that fits on a small stick: a session with no taskbar, no
+icon to click and no graphical application, where the root menu on the right-click
+is the interface and `foot` is the point - a wide terminal with fonts, several
+windows, copy and paste, and screenshots for a bug report. Everything with a screen
+in the minimal image is GPU-free: labwc renders through pixman, foot through shared
+memory.
+
+**`desktop`: GNOME on Wayland, with Firefox.** This is the flavour that stops
+being small, and the reason is the browser. On a machine that will not boot,
+being able to read the documentation of the hardware is the most useful thing an
+image can offer, and Firefox costs what it costs. Measured: +383 paths, 2707.5
+MiB of NAR, 1083 to 1557 MiB of ISO on top of the console image. XFCE would have
+saved 12% of that (1300 against 1477 MiB of NAR) and was refused: it is not what
+someone reaching for a desktop expects, and 12% does not pay for a second set of
+habits.
+
+It is also the flavour where the graphical rescue tools become affordable, which
+is the same measurement read the other way: GNOME has already paid for mesa, GTK4
+and udisks2, so `gnome-disk-utility` costs **+15.1 MiB** there against 318 MiB
+over the minimal session, `gparted` +20.7 MiB, `gnome-system-monitor` +25.7,
+`gsmartcontrol` +20.1. `gnome-disk-utility` and `gparted` ship in the desktop
+image; the other two stay in the catalogue, one flag away.
+
+Three consequences of shipping a desktop, each a safety matter rather than a
+taste one:
+
+- **Automount is off.** `org.gnome.desktop.media-handling` is forced to
+  `automount=false` and `automount-open=false`, through `extraGSettingsOverrides`
+  in `modules/desktop.nix`. A rescue medium that silently mounts, writes to, and
+  replays the journal of the disk it is examining is the one failure this project
+  cannot afford, and GNOME does exactly that by default. This is the one claim
+  about the desktop image that no file listing can check, so the session reads it
+  back from the running GNOME - `gsettings get org.gnome.desktop.media-handling
+  automount` - writes the answer on the serial console with the rest of its
+  report, and the boot test refuses anything other than `false`.
+- **The session logs itself in.** No password to type, and nobody to type it: the
+  same choice the official NixOS graphical installer makes.
+- **It has its own size guard**, 3800 MiB. The minimal image's 1800 MiB ceiling
+  has nothing to say about a flavour whose whole point is the browser.
+
+Both sessions are verified the same way, and the mechanism is worth stating,
+because it is what makes the claim checkable rather than asserted. The session
+writes a line to the serial console from *inside* itself, as a Wayland client that
+had to connect to the compositor to do so:
+
+```
+DEPANNIX_SESSION type=wayland session=labwc outputs=1
+```
+
+The boot test then captures the guest's framebuffer through the QEMU monitor and
+refuses a screenshot whose mean is zero, which is exactly a black screen. A
+session that starts and draws nothing is the failure mode this catches. And the
+minimal flavour is driven the way a person drives it: the test types `depannix
+gui` on the console, through the monitor, because testing a command nobody types
+would prove nothing.
+
+One level below that, a single environment variable decided whether any of this
+worked, and it is worth writing down because the test is what found it. wlroots
+falls back to its software renderer only when the machine has **no** DRM render
+node at all. A virtual GPU is enough to have one: virtio-gpu exposes `renderD128`.
+So `auto` took the GLES2 path, found no driver, tried Vulkan, found none, and the
+compositor exited, its log saying `unable to create renderer` and nothing more.
+The variable that used to cover exactly this case, `WLR_RENDERER_ALLOW_SOFTWARE`,
+no longer exists in wlroots 0.19; the image now sets `WLR_RENDERER=pixman`
+explicitly. In a GPU-free image that is not a preference, it is a statement of
+fact about what is installed - and it is the sort of thing that can only be found
+by starting the session, not by pricing it.
+
+Two limits, stated rather than left to be discovered: the desktop flavour is boot
+tested in BIOS mode only, the EFI path being covered by the minimal flavour; and a
+machine whose GPU this kernel does not drive cannot run the session at all. That
+last one is handled rather than hidden: `depannix gui` reports the missing
+`/dev/dri/card0` and leaves the console exactly as it was.
 
 ## Salvaged from `n8henrie/nixos-rescue`, and thrown away
 
