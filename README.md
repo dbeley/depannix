@@ -20,18 +20,22 @@ the rescue distributions you already know:
 The project ships two flavours, because a rescue medium and a usable desktop are
 not the same budget:
 
-- **`minimal`**, about 1.7 GiB: a console, plus `depannix gui`, a bare Wayland
+- **`minimal`**, about 1.6 GiB: a console, plus `depannix gui`, a bare Wayland
   session to start on demand. It carries no graphical application, measured
   rather than assumed: on Wayland a GTK program cannot draw a pixel without
-  OpenGL, and OpenGL costs 826 MiB here, half the image.
+  OpenGL, and OpenGL costs 826 MiB here, half the image. Nor does it carry the
+  portal stack a desktop needs, since nothing in it is a GTK program and `grim`
+  reads the screen without one.
 - **`desktop`**, about 3 GiB: the same, plus GNOME on Wayland and Firefox, for the
   machine whose own system no longer boots and where the answer is on a page you
   have to fetch. It carries the graphical rescue tools as well - partitioning,
   SMART, disk images - because GNOME has already paid for the driver they need.
 
-Both are built for x86_64 and aarch64, both are boot tested under KVM by CI, and
-both report the session they started on the serial console. "The session works"
-is checked there, screenshot and all, rather than asserted.
+Both are built for x86_64 and aarch64. The x86_64 images are boot tested under KVM
+by CI; the aarch64 ones are built and measured but never booted, because the ARM
+runners offer no KVM, and that gap is stated rather than papered over. Both flavours
+report the session they started on the serial console. "The session works" is checked
+there, screenshot and all, rather than asserted.
 
 ## Download
 

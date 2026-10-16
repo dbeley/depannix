@@ -182,6 +182,19 @@
               fi
             ''
             }
+            ${lib.optionalString (gui && flavour == "minimal") ''
+              # This image's menu and its help both promise a screenshot, and its
+              # portal stack was removed on the strength of one claim: grim reads
+              # the screen through wlr-screencopy and not through a portal. That
+              # is the kind of claim that is true the day it is written, so the
+              # session exercises it on every boot and this is where it counts.
+              if ! grep -q 'DEPANNIX_SESSION .*screenshot=yes' $out/serial.log; then
+                echo "FAIL: the session could not capture the screen." >&2
+                grep 'DEPANNIX_SESSION' $out/serial.log >&2 || echo "(nothing at all)" >&2
+                grep -A4 'cannot capture the screen' $out/serial.log >&2 || true
+                exit 1
+              fi
+            ''}
             ${lib.optionalString (gui && flavour == "desktop") ''
               # The desktop image makes exactly one promise about the disks: it
               # will not mount one. That is a setting, and a setting asserted in

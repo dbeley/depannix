@@ -17,6 +17,7 @@ let
     runtimeInputs = with pkgs; [
       coreutils
       gnugrep
+      grim
       labwc
       swaybg
       wayland-utils
@@ -40,6 +41,25 @@ in
     hardware.graphics.enable = lib.mkForce false;
     fonts.enableDefaultPackages = lib.mkForce false;
     services.speechd.enable = lib.mkForce false;
+
+    # The same import turns on xdg.portal, and with it a chain that has nothing
+    # to do with drawing a window: xdg-desktop-portal-gtk pulls gnome-desktop,
+    # gtk4 and gst-plugins-bad, which pull flite, freepats, ffmpeg, x265,
+    # fluidsynth. Measured on the closure: 89 paths and 242 MiB of NAR out, 4.9
+    # MiB of machinery back in, and 92.4 MiB of ISO - 5.4% of the image.
+    #
+    # Nothing here uses a portal. No application in this image is GTK: the menu,
+    # the terminal and the background are plain Wayland clients, and grim reads
+    # the screen through wlr-screencopy. Dropping the stack is not a saving
+    # found in a corner, it is the removal of a default that was inherited by
+    # accident. The desktop flavour keeps it, and needs it: GNOME's own
+    # components and every file chooser in that session go through portals.
+    #
+    # `mkForce` because the assignment happens inside the module that imports
+    # wayland-session.nix, where a plain one would be a definition conflict.
+    # Measurements: docs/budget.md.
+    xdg.portal.enable = lib.mkForce false;
+    xdg.portal.extraPortals = lib.mkForce [ ];
 
     # A session with no font and no cursor is a black screen with extra steps.
     fonts.packages = [ pkgs.dejavu_fonts ];

@@ -135,15 +135,19 @@ desktop figure is the same build, measured here.
 
 | flavour | system | release ISO | budget | margin |
 |---|---|---|---|---|
-| `minimal` | x86_64 | **1721 MiB** (1 804 861 440 B) | 1800 MiB | 79 MiB |
+| `minimal` | x86_64 | **1629 MiB** (1 707 933 696 B) | 1800 MiB | 171 MiB |
 | `minimal` | aarch64 | **1739 MiB** (1 824 458 752 B) | 1800 MiB | 61 MiB |
 | `desktop` | x86_64 | **2877 MiB** (3 016 949 760 B) | 3800 MiB | 923 MiB |
 
+The aarch64 row is the figure CI measured before the portal trim below; the next run
+on that change re-measures it.
+
 The console image that shipped as 2026.10 was 1517.0 MiB (1 590 722 560 B), with a
 store-to-ISO ratio of 57%. Adding a Wayland session cost 204 MiB of ISO, and the
-margin under the ceiling fell from 283 MiB to 79. That is the same decision priced in
-the currency the guard uses, and the reason the guard is there rather than in a
-paragraph.
+margin under the ceiling fell from 283 MiB to 79. The portal trim gives 92 of those
+back: the session now costs **112 MiB**, and the margin is 171. That is the same
+decision priced in the currency the guard uses, and the reason the guard is there
+rather than in a paragraph.
 
 Context benchmarks:
 
@@ -151,10 +155,11 @@ Context benchmarks:
 - Official minimal NixOS ISO: 1533 MiB
 - Official graphical NixOS ISO (GNOME): 3574 MiB
 
-Dépannix is **199 MiB above** SystemRescue and **16 MiB below** the official
-minimal NixOS ISO. The goal is not to beat SystemRescue on size: it is to land in
-the same zone **with** a way to extend the tooling without reflashing, and with a
-publishable composition. The overhead compared with SystemRescue is the complete
+Dépannix carries that session at **1629 MiB**: 311 MiB above SystemRescue and 96 MiB
+above the official minimal NixOS ISO, and 1945 MiB below the official graphical one.
+The goal is not to beat SystemRescue on size: it is to land in the same zone **with**
+a session, a way to extend the tooling without reflashing, and a publishable
+composition. The overhead compared with SystemRescue is the complete
 redistributable firmware and the NixOS module tree that `nixos-install` pulls in
 (200 MiB). That path holds `nixos/` alone, not `pkgs/`: it is a module tree and
 not a nixpkgs copy, and nothing in this image can build from source offline.
@@ -214,11 +219,17 @@ there is no file chooser to serve. **The desktop image keeps them**: GNOME's own
 components and every file chooser in that session go through portals, and it has paid
 for GTK4 anyway.
 
-**Built to check it, the ISO follows**: 1 804 861 440 bytes become 1 707 933 696, so
-**92.4 MiB, 5.4% of the image**. More than the NAR figures suggested, which is not a
-surprise once the blocks are named: a squashfs block holding a speech synthesis voice
-and one holding a soundfont are blocks the session never reads, and dropping them
-drops the block with them.
+**Built to check it, and then pulled: the ISO goes from 1 804 861 440 bytes to
+1 707 933 696, so 92.4 MiB, 5.4% of the image.** More than the NAR figures
+suggested, which is not a surprise once the blocks are named: a squashfs block
+holding a speech synthesis voice and one holding a soundfont are blocks the session
+never reads, and dropping them drops the block with them.
+
+Removing a default is only honest if what it was said to serve still works, so the
+session now captures one pixel with `grim` on every boot and reports `screenshot=yes`
+on the serial console, and the minimal image's boot test fails without that line. It
+passes, with the portals gone, which is the claim measured rather than argued. The
+desktop image keeps its portals.
 
 The same pair of builds is the reproducibility evidence: the image built here, on two
 cores, is byte for byte the one CI built on four.
@@ -231,7 +242,8 @@ rescue image is rarely a package somebody chose.
 These rows rank the candidates against each other; they do not budget the session.
 The budget is the measured diff above - **+294 paths, +669 MiB of NAR, +238 MiB of
 ISO** - and every row here is smaller than the sum of its parts for the same reason
-a package closure is smaller than the image it lands in.
+a package closure is smaller than the image it lands in. The portal trim described
+above takes 89 of those paths and 92.4 MiB of that ISO back out.
 
 | stack | + paths | new NAR | ISO |
 |---|---|---|---|

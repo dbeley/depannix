@@ -116,7 +116,35 @@ swaybg -c '#1a1a2e' >/tmp/swaybg.log 2>&1 &
 # screen shows something a screenshot can tell apart from a blank one.
 foot >/tmp/foot.log 2>&1 &
 
-report "DEPANNIX_SESSION type=wayland session=labwc outputs=$outputs"
+# What this image promises, checked rather than assumed. The root menu and the
+# help both offer a screenshot, and this image has just had its portal stack
+# removed on the strength of a claim: that grim reads the screen through
+# wlr-screencopy and not through a portal. A claim like that is exactly the kind
+# that is true the day it is written. One pixel at the origin, so the probe
+# exercises the whole path and writes nothing worth keeping.
+screenshot=no
+for _ in $(seq 1 20); do
+  if grim -g '0,0 1x1' /tmp/depannix-screenshot-probe.ppm 2>/tmp/grim.log \
+    && [ -s /tmp/depannix-screenshot-probe.ppm ]; then
+    screenshot=yes
+    break
+  fi
+  if ! kill -0 "$compositor" 2>/dev/null; then
+    break
+  fi
+  sleep 0.5
+done
+
+if [ "$screenshot" != yes ]; then
+  {
+    echo "The session is up, but it cannot capture the screen. grim said:"
+    tail -5 /tmp/grim.log 2>/dev/null | sed 's/^/    /' || echo "    (nothing)"
+  } > /tmp/depannix-screenshot-failure.txt
+  cat /tmp/depannix-screenshot-failure.txt >&2
+  if [ -w /dev/ttyS0 ]; then cat /tmp/depannix-screenshot-failure.txt > /dev/ttyS0; fi
+fi
+
+report "DEPANNIX_SESSION type=wayland session=labwc outputs=$outputs screenshot=$screenshot"
 
 wait "$compositor"
 report "DEPANNIX_SESSION ended session=labwc"
