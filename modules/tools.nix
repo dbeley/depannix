@@ -19,8 +19,23 @@ let
 
   optionalNames = map (e: e.name) catalog.optional;
 
-  # Exactly what ships, so the guard covers exactly that.
+  flavoursOf = catalog.flavoursOf;
+
+  # Exactly what ships, so the guard covers exactly that. The flavour decides
+  # which catalogue entries become packages; a flavour name with a typo in it
+  # would silently drop tools from the image, hence the assertion below.
+  inFlavour = builtins.filter (e: builtins.elem config.depannix.flavour (flavoursOf e));
+
+  shippedCore = inFlavour catalog.core;
+
+  # Optional tools are deliberately NOT filtered by flavour: enabling one is an
+  # explicit request, and dropping it quietly because it belongs to the other
+  # image would be the kind of quiet lie this catalogue exists to prevent.
   shippedOptional = builtins.filter (e: lib.elem e.name config.depannix.optionalTools) catalog.optional;
+
+  unknownFlavours = builtins.filter
+    (e: builtins.any (f: !(lib.elem f catalog.knownFlavours)) (flavoursOf e))
+    (catalog.core ++ catalog.optional);
 
   unknownNames = builtins.filter (e: !(builtins.hasAttr e.name pkgs)) (catalog.core ++ catalog.optional);
   missingMetadata = builtins.filter (e: e.category == "" || e.gesture == "") (catalog.core ++ shippedOptional);
@@ -40,8 +55,8 @@ in
     description = ''
       Convenience tools that are enabled. By default only three, weighing
       ~157 MiB together (individual closures): even comfort has a price.
-      Enabling `fish`, `gparted` or `guymager` costs hundreds of MiB; the CI
-      size guard will flag it. Measurements: docs/budget.md.
+      Enabling `neovim`, `gnome-disk-utility` or `guymager` costs hundreds of
+      MiB; the CI size guard will flag it. Measurements: docs/budget.md.
     '';
   };
 
@@ -69,10 +84,14 @@ in
         assertion = unknownCategories == [ ];
         message = "tool catalogue entries whose category is not in categoryOrder, so they would vanish from the catalogue: ${names unknownCategories}";
       }
+      {
+        assertion = unknownFlavours == [ ];
+        message = "tool catalogue entries naming a flavour that does not exist, so they would ship in no image at all: ${names unknownFlavours}";
+      }
     ];
 
     environment.systemPackages =
-      map (e: pkgs.${e.name}) catalog.core
+      map (e: pkgs.${e.name}) shippedCore
       ++ lib.optionals config.depannix.enableZfs [ pkgs.zfs ]
       ++ map (n: pkgs.${n}) config.depannix.optionalTools
       ++ config.depannix.extraTools;

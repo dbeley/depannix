@@ -31,14 +31,30 @@ jobs:
           # Ubuntu 26 on 2026-10-19: left floating, the build chain would change
           # by itself one working day, with nobody having decided it. Aligned
           # with the arm64 runner, which is pinned too.
+          #
+          # Both flavours on both architectures, in four jobs rather than one:
+          # the desktop image is several times larger, and a failure in it must
+          # not hide the minimal one.
           - runner: ubuntu-24.04
             system: x86_64-linux
+            flavour: minimal
+            kvm: true
+          - runner: ubuntu-24.04
+            system: x86_64-linux
+            flavour: desktop
             kvm: true
           # The free arm64 runners do not expose /dev/kvm (an Azure ARM SKU
-          # limitation, not an image one). So we build the aarch64 ISO but do not
-          # boot it here: the aarch64 boot test stays manual. See docs/design.md.
+          # limitation, not an image one). So we build the aarch64 images but do
+          # not boot them here: the aarch64 boot test stays manual, and the
+          # graphical tests skip themselves for the same reason. See
+          # docs/design.md.
           - runner: ubuntu-24.04-arm
             system: aarch64-linux
+            flavour: minimal
+            kvm: false
+          - runner: ubuntu-24.04-arm
+            system: aarch64-linux
+            flavour: desktop
             kvm: false
 
     steps:
@@ -80,8 +96,8 @@ jobs:
           # silently falls back to software emulation and the job times out.
           test -w /dev/kvm
 
-      - name: Build the ISO
-        run: nix build .#minimal --out-link result-iso -L
+      - name: Build the ${{ matrix.flavour }} ISO
+        run: nix build .#${{ matrix.flavour }} --out-link result-iso -L
 
       - name: ISO size
         run: |
@@ -90,20 +106,43 @@ jobs:
           printf 'size: %s MiB\n' "$(( $(stat -c%s "$iso") / 1048576 ))"
 
       - name: Boot test (BIOS, then EFI)
-        if: matrix.kvm
+        if: matrix.kvm && matrix.flavour == 'minimal'
         run: |
           # /dev/kvm must be injected into the sandbox: without that, QEMU falls
           # back to software emulation and the job times out. Enabling KVM on the
           # runner is not enough by itself, because a `nix build` runs in a
           # sandbox that does not expose /dev/kvm.
-          nix build --option extra-sandbox-paths /dev/kvm .#checks.${{ matrix.system }}.boot-test-bios --out-link result-boot-bios -L
-          nix build --option extra-sandbox-paths /dev/kvm .#checks.${{ matrix.system }}.boot-test-efi --out-link result-boot-efi -L
+          #
+          # Both firmware paths are covered on the reference flavour; the desktop
+          # one is tested in BIOS mode only, which docs/design.md states rather
+          # than leaves to be discovered.
+          nix build --option extra-sandbox-paths /dev/kvm .#checks.${{ matrix.system }}.boot-test-minimal-bios --out-link result-boot-bios -L
+          nix build --option extra-sandbox-paths /dev/kvm .#checks.${{ matrix.system }}.boot-test-minimal-efi --out-link result-boot-efi -L
+
+      - name: Graphical session test
+        if: matrix.kvm
+        run: |
+          # The minimal image has no display manager: the session starts when an
+          # operator asks for it, so this test asks for it too, by typing
+          # `depannix gui` on the guest console through the QEMU monitor. The
+          # desktop image logs itself in.
+          #
+          # Either way the session then has to report itself on the serial
+          # console, as a Wayland client that connected to the compositor, and
+          # the captured screen must not be black.
+          if [ "${{ matrix.flavour }}" = minimal ]; then
+            check=session-minimal-bios
+          else
+            check=boot-test-desktop-bios
+          fi
+          nix build --option extra-sandbox-paths /dev/kvm \
+            ".#checks.${{ matrix.system }}.$check" --out-link result-boot-gui -L
 
       - name: Size guard
-        run: nix build .#checks.${{ matrix.system }}.size-budget --out-link result-budget -L
+        run: nix build .#checks.${{ matrix.system }}.size-budget-${{ matrix.flavour }} --out-link result-budget -L
 
       - name: Composition manifest
-        run: nix build .#packages.${{ matrix.system }}.closure-manifest --out-link result-manifest -L
+        run: nix build .#packages.${{ matrix.system }}.closure-manifest-${{ matrix.flavour }} --out-link result-manifest -L
 
       - name: Build provenance attestation
         if: github.event_name != 'pull_request'
@@ -113,10 +152,23 @@ jobs:
 
       - uses: actions/upload-artifact@v7
         with:
-          name: depannix-${{ matrix.system }}
+          name: depannix-${{ matrix.flavour }}-${{ matrix.system }}
           path: |
             result-iso/iso/*.iso
             result-manifest/*
+          if-no-files-found: error
+
+      # The proof that a session came up, published as a picture: a serial log
+      # saying so is evidence, a screenshot of the running session is better.
+      # Named `session-` and not `depannix-` so that the release job, which
+      # downloads `depannix-*`, does not pull it in.
+      - uses: actions/upload-artifact@v7
+        if: matrix.kvm
+        with:
+          name: session-${{ matrix.flavour }}-${{ matrix.system }}
+          path: |
+            result-boot-gui/session.png
+            result-boot-gui/serial.log
           if-no-files-found: error
 
   release:
@@ -197,11 +249,14 @@ jobs:
           # where a visitor lands: it should say what the artefact is, how to
           # verify it, and what it does not do.
           {
-            echo "Minimal NixOS rescue ISO: diagnosis, benchmarks, repair,"
-            echo "partitioning and cloning. Boot tested under KVM by CI."
+            echo "NixOS rescue images: diagnosis, benchmarks, repair, partitioning"
+            echo "and cloning. Boot tested under KVM by CI, graphical session"
+            echo "included."
             echo
-            echo "**On an ordinary PC, take the x86_64 image: the file ending in"
-            echo '`.iso`.** The other assets are the proof of what is inside it.'
+            echo "**On an ordinary PC, take an \`x86_64\` image.** There are two"
+            echo "flavours: \`depannix-minimal-*\` is the small one, a console with a"
+            echo "Wayland session on demand; \`depannix-desktop-*\` adds GNOME and"
+            echo "Firefox. The other assets are the proof of what is inside them."
             echo
             for iso in "$ISO_DIR"/*.iso; do
               f=$(basename "$iso")
@@ -212,15 +267,18 @@ jobs:
             echo
             echo "| file | what it is for |"
             echo "|---|---|"
-            echo '| `depannix-minimal-<release>-<system>.iso` | the image |'
-            echo '| `closure-<system>.json` | every embedded store path, with its NAR hash and size |'
-            echo '| `closure-sri-<system>.tsv` | the same paths and hashes, in the encoding narinfo files use |'
+            echo '| `depannix-minimal-<release>-<system>.iso` | the console image, with a Wayland session on demand |'
+            echo '| `depannix-desktop-<release>-<system>.iso` | the same, plus GNOME and Firefox |'
+            echo '| `closure-<flavour>-<system>.json` | every embedded store path, with its NAR hash and size |'
+            echo '| `closure-sri-<flavour>-<system>.tsv` | the same paths and hashes, in the encoding narinfo files use |'
             echo '| `SHA256SUMS` | the hashes of all of the above, signed |'
             echo
-            for s in x86_64-linux aarch64-linux; do
-              printf -- '- **%s**: %s store paths, %s bytes of NAR.\n' "$s" \
-                "$(jq 'length' "$MANIFEST_DIR/closure-$s.json")" \
-                "$(jq 'map(.narSize) | add' "$MANIFEST_DIR/closure-$s.json")"
+            for f in minimal desktop; do
+              for s in x86_64-linux aarch64-linux; do
+                printf -- '- **%s / %s**: %s store paths, %s bytes of NAR.\n' "$f" "$s" \
+                  "$(jq 'length' "$MANIFEST_DIR/closure-$f-$s.json")" \
+                  "$(jq 'map(.narSize) | add' "$MANIFEST_DIR/closure-$f-$s.json")"
+              done
             done
             echo
             echo '```'
@@ -283,7 +341,11 @@ jobs:
             here.
           - **Secure Boot must be disabled.** The image carries no Secure Boot
             signature: minisign signs the checksums, not the boot chain.
-          - No persistence and no graphical interface in v1.
+          - **No persistence.** Nothing done in a session survives a reboot: this
+            is a live medium, and v1 has no way to keep anything on the stick.
+          - **The disk you plug in is not mounted for you.** Automount is off in
+            both images, including in GNOME, where the default would mount, write
+            to, and replay the journal of the very disk being rescued.
           LIMITS_EOF
 
       - name: Publish

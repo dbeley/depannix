@@ -11,6 +11,7 @@ let
     system = pkgs.stdenv.hostPlatform.system;
     label = config.system.nixos.label;
     enabledOptional = cfg.optionalTools;
+    flavour = cfg.flavour;
   };
 in
 {
@@ -84,6 +85,15 @@ in
         fi
 
         ${discovery.bundle}/bin/depannix missing phoronix-test-suite 2>&1 | head -2 > /dev/ttyS0 || true
+
+        # Whether this image carries a session, and which flavour it is: the two
+        # flavours have different answers and the log should say which one it
+        # got, rather than leaving it to be inferred from a version string.
+        if command -v depannix-session >/dev/null 2>&1; then
+          echo "DEPANNIX_SELFTEST session=available flavour=${cfg.flavour}" > /dev/ttyS0 || true
+        else
+          echo "DEPANNIX_SELFTEST session=none flavour=${cfg.flavour}" > /dev/ttyS0 || true
+        fi
       '';
     };
 

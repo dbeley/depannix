@@ -14,12 +14,27 @@
 # for the optional tools only, as in the original list. The core set is measured
 # in docs/budget.md. A tool without a figure is refused for the optional set.
 #
+# `flavours` says which images carry the entry. The minimal flavour is a console
+# plus a bare Wayland session; the desktop flavour is GNOME and a browser. An
+# entry with no `flavours` ships in both. Without this field the catalogue would
+# have to claim that the minimal image carries a browser, or that the desktop one
+# carries labwc, and it would be lying in both directions.
+#
 # Order matters here for one reason: it is the order the packages are wired into
 # the system, and keeping it makes a change to this file provably inert. The
 # catalogue's own display order is a separate concern.
 { pkgs }:
 
 rec {
+  knownFlavours = [
+    "minimal"
+    "desktop"
+  ];
+
+  # One place decides what an entry with no explicit scope means. The image and
+  # the catalogue command both read it here, so they cannot disagree.
+  flavoursOf = e: e.flavours or knownFlavours;
+
   # ── Capability: every entry maps to a repair gesture ──────────────────────
   core = [
     # Partitioning and filesystems
@@ -90,13 +105,57 @@ rec {
     { name = "rsync"; category = "comfort"; gesture = "copy, resume, and verify"; }
     { name = "nano"; category = "comfort"; gesture = "edit a file without learning an editor"; }
     { name = "less"; category = "comfort"; gesture = "read a file, including the awkward ones"; }
+
+    # ── Graphical session: the minimal flavour ───────────────────────────────
+    # Everything below is deliberately GPU-free: labwc renders through pixman,
+    # foot through shared memory, and grim, slurp, swaybg, kanshi, swaylock,
+    # mako and wl-clipboard are plain Wayland clients. That is not a detail, it
+    # is the whole budget. Enabling OpenGL costs a mesa that weighs +826 MiB of
+    # ISO, and a GTK application on Wayland cannot draw a pixel without it:
+    # that is why no graphical tool appears in this block, and why gparted
+    # moved to the desktop flavour. Measurements: docs/budget.md.
+    { name = "labwc"; category = "graphics"; flavours = [ "minimal" ]; gesture = "the session itself: a compositor, no desktop on top"; }
+    { name = "foot"; category = "graphics"; flavours = [ "minimal" ]; gesture = "a terminal inside the session, not another TTY"; }
+    { name = "swaybg"; category = "graphics"; flavours = [ "minimal" ]; gesture = "something other than black behind the windows"; }
+    { name = "grim"; category = "graphics"; flavours = [ "minimal" ]; gesture = "capture the screen: evidence for a bug report"; }
+    { name = "slurp"; category = "graphics"; flavours = [ "minimal" ]; gesture = "pick the region grim should capture"; }
+    { name = "wl-clipboard"; category = "graphics"; flavours = [ "minimal" ]; gesture = "copy between the session and the shell"; }
+    { name = "mako"; category = "graphics"; flavours = [ "minimal" ]; gesture = "notifications, for what has none on a console"; }
+    { name = "wlr-randr"; category = "graphics"; flavours = [ "minimal" ]; gesture = "arrange the outputs when the screen stays black"; }
+    { name = "kanshi"; category = "graphics"; flavours = [ "minimal" ]; gesture = "the same arrangements, declared in a file"; }
+    { name = "swaylock"; category = "graphics"; flavours = [ "minimal" ]; gesture = "lock a screen you are leaving behind"; }
+    { name = "wayland-utils"; category = "graphics"; flavours = [ "minimal" ]; gesture = "wayland-info: what the compositor really offers"; }
+
+    # ── Graphical session: the desktop flavour ───────────────────────────────
+    # Here a driver is paid for anyway, because GNOME's shell needs one.
+    { name = "gnome-shell"; category = "graphics"; flavours = [ "desktop" ]; gesture = "the GNOME session, on Wayland"; }
+    { name = "firefox"; category = "graphics"; flavours = [ "desktop" ]; gesture = "read the documentation of the machine that will not boot"; }
+    { name = "pipewire"; category = "graphics"; flavours = [ "desktop" ]; gesture = "sound, which a desktop session expects"; }
+
+    # ── Graphical rescue tools: affordable once somebody else paid ───────────
+    # Same packages, same question, opposite answer. Measured over the desktop
+    # session: gparted costs +20.7 MiB of NAR and gnome-disk-utility +15.1 MiB,
+    # because GTK4 and udisks2 are already there. In the minimal image neither
+    # has a working driver, and the second would cost +318 MiB on top of it.
+    { name = "gparted"; category = "partitioning"; flavours = [ "desktop" ]; gesture = "partitioning, with a screen"; }
+    { name = "gnome-disk-utility"; category = "partitioning"; flavours = [ "desktop" ]; gesture = "gnome-disks: SMART, images and mounting, with a screen"; }
+
+    # ── GPU benchmarks: only where a driver is paid for anyway ───────────────
+    # In the minimal flavour these would each drag in mesa, measured at
+    # +1304 MiB of NAR. On the desktop mesa is part of the session, and all
+    # three together cost +37 MiB.
+    { name = "glmark2"; category = "benchmark"; flavours = [ "desktop" ]; gesture = "OpenGL throughput, where a driver exists"; }
+    { name = "vkmark"; category = "benchmark"; flavours = [ "desktop" ]; gesture = "Vulkan throughput, the modern equivalent"; }
+    { name = "clpeak"; category = "benchmark"; flavours = [ "desktop" ]; gesture = "compute throughput of the GPU"; }
   ];
 
   # ── Convenience: measured, therefore accepted as optional ─────────────────
   # Figures are the closure of the package alone, through the official binary
   # cache. Beware: they do not add up - shared dependencies are counted several
   # times. They rank the cost, they do not budget it. The exact budget is the
-  # union, see docs/budget.md.
+  # union, see docs/budget.md, which also carries the marginal cost of each of
+  # these over a running desktop session, where several of them are far cheaper
+  # than the figure below suggests.
   optional = [
     { name = "fzf"; category = "comfort"; figure = "50 MiB, 11 paths"; gesture = "fuzzy-find anything, including this catalogue"; }
     { name = "fd"; category = "comfort"; figure = "51 MiB, 7 paths"; gesture = "find files by name, faster than find"; }
@@ -108,8 +167,8 @@ rec {
     { name = "neovim"; category = "comfort"; figure = "262 MiB, 115 paths"; gesture = "edit files when nano is not enough"; }
     { name = "fish"; category = "comfort"; figure = "309 MiB, 45 paths"; gesture = "a shell that suggests as you type"; }
     { name = "gsmartcontrol"; category = "diagnostics"; figure = "317 MiB, 112 paths"; gesture = "smartctl, with a screen"; }
-    { name = "gparted"; category = "partitioning"; figure = "385 MiB, 132 paths"; gesture = "partitioning, with a screen"; }
     { name = "phoronix-test-suite"; category = "benchmark"; figure = "606 MiB, 139 paths"; gesture = "benchmark and compare machines"; }
+    { name = "gnome-system-monitor"; category = "diagnostics"; figure = "1009 MiB, 302 paths"; gesture = "what is running, and what it is eating"; }
     { name = "guymager"; category = "recovery"; figure = "2540 MiB, 259 paths"; gesture = "forensic imaging of a disk, with hashes"; }
   ];
 
@@ -122,5 +181,6 @@ rec {
     "benchmark"
     "network"
     "comfort"
+    "graphics"
   ];
 }

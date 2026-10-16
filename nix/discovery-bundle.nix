@@ -8,10 +8,14 @@
 #
 # Everything is generated from nix/tool-catalog.nix and help/help.txt, so the
 # catalogue cannot drift from what ships: it *is* what ships.
-{ pkgs, lib ? pkgs.lib, version, system, label, enabledOptional ? [ ] }:
+{ pkgs, lib ? pkgs.lib, version, system, label, enabledOptional ? [ ], flavour ? "minimal" }:
 
 let
   catalog = import ./tool-catalog.nix { inherit pkgs; };
+
+  # What this image carries: the catalogue says it, one field at a time, and
+  # both this file and modules/tools.nix read it the same way.
+  inFlavour = es: builtins.filter (e: builtins.elem flavour (catalog.flavoursOf e)) es;
 
   categoryTitles = {
     partitioning = "Partitioning and filesystems";
@@ -20,11 +24,12 @@ let
     benchmark = "Benchmarking";
     network = "Network";
     comfort = "Command-line comfort";
+    graphics = "Graphical session";
   };
 
   entries =
-    map (e: e // { enabled = true; }) catalog.core
-    ++ map (e: e // { enabled = builtins.elem e.name enabledOptional; }) catalog.optional;
+    map (e: e // { enabled = true; }) (inFlavour catalog.core)
+    ++ map (e: e // { enabled = builtins.elem e.name enabledOptional; }) (inFlavour catalog.optional);
 
   # Right-pad, so the generated text lines up in a terminal.
   pad =
@@ -68,7 +73,7 @@ let
 
   # ── The catalogue, as text and as JSON ────────────────────────────────────
   toolsText = pkgs.writeText "depannix-tools.txt" (
-    "Dépannix ${version} - what this image carries (${system})\n\n"
+    "Dépannix ${version} - the ${flavour} image, and what it carries (${system})\n\n"
     + "Grouped by capability, not by package. A tool marked \"not enabled here\"\n"
     + "is in the catalogue but costs more than the default build accepts;\n"
     + "`depannix missing <name>` says how to get it anyway.\n\n"
@@ -87,7 +92,7 @@ let
 
   toolsJson = pkgs.writeText "depannix-tools.json" (
     builtins.toJSON {
-      inherit version system;
+      inherit version system flavour;
       nixpkgs = label;
       tools = map (
         e: { inherit (e) name category gesture enabled; } // lib.optionalAttrs (e ? figure) { inherit (e) figure; }
@@ -95,16 +100,21 @@ let
     }
   );
 
-  versionText = pkgs.writeText "depannix-version.txt" "Dépannix ${version} (${system}, nixpkgs ${label})\n";
+  versionText = pkgs.writeText "depannix-version.txt" "Dépannix ${version} (${flavour}, ${system}, nixpkgs ${label})\n";
+
+  # Two flavours, two greetings. The console asks for a session, the desktop
+  # has one already: telling a desktop user to run `depannix gui` would be a
+  # dead end dressed as a hint.
+  sessionLine = lib.optionalString (flavour == "minimal") "  depannix gui          a Wayland session, without a desktop on top\n";
 
   greetingText = pkgs.writeText "depannix-greeting.txt" ''
-    Dépannix ${version} - minimal rescue image (${system})
+    Dépannix ${version} - ${flavour} rescue image (${system})
 
     You are root on a live medium: nothing here survives a reboot.
       depannix tools        what this image carries
       depannix help         what to do about a failure (subjects, one per file)
       ~/depannix-help.txt   the same as a file, and on the stick at /iso
-  '';
+    ${sessionLine}'';
 
   # ── The package ───────────────────────────────────────────────────────────
   data = pkgs.runCommand "depannix-data-${version}" { } ''
@@ -124,6 +134,7 @@ let
     mkdir -p $out/bin
     sed -e '1s|^#!/usr/bin/env bash$|#!${pkgs.bash}/bin/bash|' \
         -e 's|@DATA@|${data}/share/depannix|g' \
+        -e 's|@FLAVOUR@|${flavour}|g' \
         ${./depannix.sh} > $out/bin/depannix
     chmod +x $out/bin/depannix
     # A build-time smoke test: a command that cannot even print its version

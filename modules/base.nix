@@ -31,9 +31,14 @@ in
     };
 
     flavour = mkOption {
-      type = types.enum [ "minimal" ];
+      type = types.enum [ "minimal" "desktop" ];
       default = "minimal";
-      description = "Flavour being built. Only one so far, by choice.";
+      description = ''
+        Which image is being built. `minimal` is a console with a bare Wayland
+        session (labwc) available on demand; `desktop` is GNOME with Firefox.
+        The catalogue of tools reads this to decide what ships: see
+        nix/tool-catalog.nix and docs/design.md.
+      '';
     };
 
     squashfsCompression = mkOption {
@@ -166,6 +171,12 @@ in
     # live medium - but it is documented in the README, not hidden.
     users.users.root.openssh.authorizedKeys.keys = cfg.authorizedKeys;
     users.users.nixos.openssh.authorizedKeys.keys = cfg.authorizedKeys;
+
+    # The serial console is a first-class output of this medium (it is how the
+    # boot test sees anything at all), so the person at the console can write to
+    # it. That is also what lets a graphical session started by hand announce
+    # itself there, instead of only on a screen nobody is watching.
+    users.users.nixos.extraGroups = [ "tty" ];
 
     services.openssh = {
       enable = mkIf cfg.enableSsh true;

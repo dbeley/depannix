@@ -287,3 +287,36 @@ formality. Anything missing from this image can also be added on the spot, on a
 machine with network:
 
     nix shell nixpkgs#<name>
+
+== gui | A graphical session, when a console is not enough
+
+This image carries a Wayland session, without a desktop on top of it:
+
+    depannix gui
+
+The screen showing you a console becomes a session: a terminal with fonts, a
+mouse and several windows, a right-click menu that launches more. Leave the
+session, and the console comes back exactly where it was.
+
+There is no graphical application in this image, and that is a measured choice
+rather than an oversight. On Wayland a GTK program cannot draw a single pixel
+without OpenGL, and OpenGL costs 826 MiB here, more than half the image. So
+everything with a screen in this image is GPU-free: the compositor renders in
+software, the terminal in shared memory. What a screen is good for, then, is
+mostly the tools that live in a terminal: a wide one, with copy and paste that
+behave, and screenshots for a bug report. Partitioning with a screen does exist,
+in the desktop image, where GNOME has already paid for the driver.
+
+If the session does not start:
+
+    ls /dev/dri              # no card means no DRM device, so no session at all
+    cat /tmp/labwc-session.log
+    wayland-info             # from inside a session: what the compositor offers
+    wlr-randr                # the outputs, and whether one is connected
+
+A machine whose GPU is not driven by this kernel cannot run the session. It says
+so and leaves the console untouched, rather than freezing a screen you cannot
+get out of. Everything else in this image is unaffected.
+
+The desktop image needs none of this: it boots straight into GNOME with Firefox,
+and logs itself in.

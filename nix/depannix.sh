@@ -8,6 +8,7 @@
 set -euo pipefail
 
 DATA="@DATA@"
+FLAVOUR="@FLAVOUR@"
 no_pager=0
 
 # Page long output when a human reads it, and never when a program does: a
@@ -37,6 +38,7 @@ depannix - what this image carries, and what to do with it
   depannix tools --json       the same, for jq
   depannix help [subject]     the subjects covered, or one of them in full
   depannix missing <command>  is it here? and how to get it if not
+  depannix gui                a Wayland session on this screen (minimal image)
   depannix version            which release this is
 
 The catalogue and the help are also plain files, in the home directory you land
@@ -158,10 +160,34 @@ cmd_missing() {
   return 1
 }
 
+# A graphical session, on demand. The desktop image boots into one; the minimal
+# image does not, by choice, so this is the command that changes it. Both cases
+# are covered here rather than in the greeting, so that neither flavour can tell
+# the operator to run something that does not exist there.
+cmd_gui() {
+  if [ "$FLAVOUR" = desktop ]; then
+    cat <<'EOF'
+This is the desktop image: GNOME starts by itself, with Firefox in it.
+
+Take the minimal image if you wanted a console that stays a console.
+EOF
+    return 0
+  fi
+
+  if ! command -v depannix-session >/dev/null 2>&1; then
+    printf 'depannix: this image carries no graphical session.\n' >&2
+    printf 'What it does carry is one command away:  depannix tools\n' >&2
+    return 1
+  fi
+
+  exec depannix-session "$@"
+}
+
 case "${1:-}" in
   tools) shift; cmd_tools "$@" ;;
   help) shift; cmd_help "$@" ;;
   missing | which) shift; cmd_missing "$@" ;;
+  gui) shift; cmd_gui "$@" ;;
   version | --version | -V) cat "$DATA/version.txt" ;;
   -h | --help | "") usage ;;
   *)
