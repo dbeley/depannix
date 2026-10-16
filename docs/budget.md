@@ -202,9 +202,15 @@ xdg-desktop-portal    -> pipewire, wireplumber, libpulseaudio (23.9 MiB)
 That is 211 MiB of NAR of speech synthesis, MIDI soundfonts and video codecs, in an
 image whose session opens none of them. The compositor does not need them either:
 they arrive because GTK4 depends on GStreamer, and GTK4 arrives with the desktop
-portals. A session that runs no GTK application has no use for a portal - `grim`
-takes screenshots directly, and there is no file chooser to serve - so the lever is
-`xdg.portal`, and the saving it buys has to be built before it is quoted.
+portals.
+
+**Measured, by diffing two closure manifests: disabling the portal stack removes 89
+paths and 242.3 MiB of NAR, and brings back 16 paths of 4.9 MiB - all of them
+machinery**, a rewritten `system-path`, the system derivation, unit files. 237 MiB
+net, and nothing usable lost: `flatpak` and `gnupg` go with the portals they serve.
+The lever is `xdg.portal`, and it costs the session nothing, because a session that
+runs no GTK application has no portal to use - `grim` takes screenshots directly, and
+there is no file chooser to serve.
 
 This is the mesa lesson one level further from the surface: what costs money in a
 rescue image is rarely a package somebody chose.
