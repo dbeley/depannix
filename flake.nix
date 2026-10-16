@@ -237,10 +237,12 @@
 
       # Guard rail: an ISO must not drift in size without anyone noticing.
       #
-      # Measured, not hoped for: 1800 MiB for the minimal image, whose console
-      # plus Wayland session lands near 1.6 GiB with the full redistributable
-      # firmware. The desktop image carries a browser and a desktop environment
-      # and needs its own, much higher ceiling. See docs/budget.md.
+      # Measured, not hoped for. The minimal image carried 1517 MiB as a console
+      # image and carries 1721 MiB on x86_64, 1739 MiB on aarch64, now that it can
+      # start a Wayland session: 79 and 61 MiB of margin, which is the price of
+      # that decision quoted in the currency the guard below uses. The desktop
+      # image carries a browser and a desktop environment, and needs its own,
+      # much higher ceiling. See docs/budget.md.
       budgets = {
         minimal = 1800;
         desktop = 3800;

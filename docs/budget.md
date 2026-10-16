@@ -181,11 +181,26 @@ separates the session's own content from the machinery around it:
 That last line is the point of the exercise: the image carries a `gbm` library by
 name and no OpenGL driver at all.
 
-The added paths are not all session. `flite`, `freepats`, `ffmpeg`, `gstreamer`,
-`x265` and `pipewire` account for about 200 MiB of speech and media libraries that a
-rescue session never opens - they arrive with the module that provides the session,
-not with the compositor. If the session stays, that is where the next saving is, and
-it is a saving to be measured rather than assumed.
+The added paths are not all session. Walking the image's own reference graph
+attributes nearly all of the surprise to a single chain:
+
+```
+xdg-desktop-portal-gtk -> gnome-desktop -> gtk4 -> gst-plugins-bad -> flite (60.5 MiB)
+                                                                  -> ffmpeg (34.4 MiB)
+                                                                  -> x265 (23.8 MiB)
+                                                                  -> fluidsynth, wildmidi, freepats (33.0 MiB)
+xdg-desktop-portal    -> pipewire, wireplumber, libpulseaudio (23.9 MiB)
+```
+
+That is 211 MiB of NAR of speech synthesis, MIDI soundfonts and video codecs, in an
+image whose session opens none of them. The compositor does not need them either:
+they arrive because GTK4 depends on GStreamer, and GTK4 arrives with the desktop
+portals. A session that runs no GTK application has no use for a portal - `grim`
+takes screenshots directly, and there is no file chooser to serve - so the lever is
+`xdg.portal`, and the saving it buys has to be built before it is quoted.
+
+This is the mesa lesson one level further from the surface: what costs money in a
+rescue image is rarely a package somebody chose.
 
 ### The minimal image's session
 
