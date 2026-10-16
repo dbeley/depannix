@@ -129,14 +129,21 @@ cost 2.4% of the image.
 
 ## Measured ISO size
 
-**1517.0 MiB (1.482 GiB)**, `zstd -Xcompression-level 19`, 2 processors.
+Both flavours, at the compression a release uses, `zstd -Xcompression-level 19`. The
+minimal figures are what CI enforces on every push, on both architectures; the
+desktop figure is the same build, measured here.
 
-| | |
-|---|---|
-| bytes | 1 590 722 560 |
-| MiB / GiB | 1517.0 / 1.482 |
-| store → ISO ratio | 2640.5 MiB → 1517.0 MiB, that is **57%** |
-| previous release (2026.10) | 1453.2 MiB, `85d2355b...10e355` |
+| flavour | system | release ISO | budget | margin |
+|---|---|---|---|---|
+| `minimal` | x86_64 | **1721 MiB** (1 804 861 440 B) | 1800 MiB | 79 MiB |
+| `minimal` | aarch64 | **1739 MiB** (1 824 458 752 B) | 1800 MiB | 61 MiB |
+| `desktop` | x86_64 | **2877 MiB** (3 016 949 760 B) | 3800 MiB | 923 MiB |
+
+The console image that shipped as 2026.10 was 1517.0 MiB (1 590 722 560 B), with a
+store-to-ISO ratio of 57%. Adding a Wayland session cost 204 MiB of ISO, and the
+margin under the ceiling fell from 283 MiB to 79. That is the same decision priced in
+the currency the guard uses, and the reason the guard is there rather than in a
+paragraph.
 
 Context benchmarks:
 
