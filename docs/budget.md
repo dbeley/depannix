@@ -210,7 +210,18 @@ machinery**, a rewritten `system-path`, the system derivation, unit files. 237 M
 net, and nothing usable lost: `flatpak` and `gnupg` go with the portals they serve.
 The lever is `xdg.portal`, and it costs the session nothing, because a session that
 runs no GTK application has no portal to use - `grim` takes screenshots directly, and
-there is no file chooser to serve.
+there is no file chooser to serve. **The desktop image keeps them**: GNOME's own
+components and every file chooser in that session go through portals, and it has paid
+for GTK4 anyway.
+
+**Built to check it, the ISO follows**: 1 804 861 440 bytes become 1 707 933 696, so
+**92.4 MiB, 5.4% of the image**. More than the NAR figures suggested, which is not a
+surprise once the blocks are named: a squashfs block holding a speech synthesis voice
+and one holding a soundfont are blocks the session never reads, and dropping them
+drops the block with them.
+
+The same pair of builds is the reproducibility evidence: the image built here, on two
+cores, is byte for byte the one CI built on four.
 
 This is the mesa lesson one level further from the surface: what costs money in a
 rescue image is rarely a package somebody chose.
