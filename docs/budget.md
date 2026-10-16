@@ -129,18 +129,17 @@ cost 2.4% of the image.
 
 ## Measured ISO size
 
-Both flavours, at the compression a release uses, `zstd -Xcompression-level 19`. The
-minimal figures are what CI enforces on every push, on both architectures; the
-desktop figure is the same build, measured here.
+Both flavours, at the compression a release uses, `zstd -Xcompression-level 19`. These
+are the figures CI's own guards printed on the commit that pulled the portal trim, one
+guard per flavour and per architecture, each naming what it measured. The x86_64 pair
+was rebuilt here as well and matches byte for byte.
 
 | flavour | system | release ISO | budget | margin |
 |---|---|---|---|---|
-| `minimal` | x86_64 | **1629 MiB** (1 707 933 696 B) | 1800 MiB | 171 MiB |
-| `minimal` | aarch64 | **1739 MiB** (1 824 458 752 B) | 1800 MiB | 61 MiB |
-| `desktop` | x86_64 | **2877 MiB** (3 016 949 760 B) | 3800 MiB | 923 MiB |
-
-The aarch64 row is the figure CI measured before the portal trim below; the next run
-on that change re-measures it.
+| `minimal` | x86_64 | **1628 MiB** (1 707 933 696 B) | 1800 MiB | 171 MiB |
+| `minimal` | aarch64 | **1649 MiB** (1 729 931 264 B) | 1800 MiB | 150 MiB |
+| `desktop` | x86_64 | **2877 MiB** (3 016 949 760 B) | 3800 MiB | 922 MiB |
+| `desktop` | aarch64 | **2850 MiB** (2 988 726 272 B) | 3800 MiB | 949 MiB |
 
 The console image that shipped as 2026.10 was 1517.0 MiB (1 590 722 560 B), with a
 store-to-ISO ratio of 57%. Adding a Wayland session cost 204 MiB of ISO, and the
