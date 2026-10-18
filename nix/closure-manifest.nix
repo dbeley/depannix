@@ -148,9 +148,14 @@ pkgs.runCommand "depannix-closure-manifest-${flavour}"
 
     # Fingerprint of the manifest itself: the value to pin in a release, and the
     # one a third party compares after rebuilding the image.
-    sha256sum $out/closure-${suffix}.json $out/store-paths-${suffix}.txt \
-      $out/closure-sri-${suffix}.tsv \
-      > $out/MANIFEST-${suffix}.sha256
+    #
+    # Bare file names, computed from inside the directory. The recorded names are
+    # then relative to the manifest, so the file can be checked wherever it and the
+    # three files it covers sit together - a download directory, a copy, or the store
+    # path it was built in - instead of only in the store path, through the absolute
+    # paths an `$out/...` invocation would record.
+    (cd $out && sha256sum closure-${suffix}.json store-paths-${suffix}.txt \
+      closure-sri-${suffix}.tsv) > $out/MANIFEST-${suffix}.sha256
 
     echo "flavour : ${flavour}"
     echo "system  : ${system}"
