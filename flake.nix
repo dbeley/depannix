@@ -16,7 +16,7 @@
       ];
 
       # CalVer version. The monthly bot rewrites it (see .github/workflows/monthly.yml).
-      version = "2026.10";
+      version = "2026.11";
 
       # Two flavours, one flake. `minimal` is the reference: a console, with a
       # bare Wayland session available on demand. `desktop` adds GNOME and
