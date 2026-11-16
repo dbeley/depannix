@@ -1,0 +1,68 @@
+name: automerge
+
+# The second half of the monthly chain.
+#
+# `monthly.yml` cannot sit and wait for a build that takes an hour or two: it
+# opens the pull request, starts CI by hand because GitHub suppresses the runs a
+# `GITHUB_TOKEN` pull request would have triggered, and stops. Nobody then
+# resumed on the green result - a person read the checks and clicked merge. This
+# workflow resumes there, and only for the bot's own `release/*` branches: every
+# human pull request is left alone.
+#
+# It fires for the `workflow_dispatch`-started run, which is the only run a
+# `GITHUB_TOKEN` pull request ever gets (see the comment in monthly.yml).
+on:
+  workflow_run:
+    workflows: ["build"]
+    types: [completed]
+
+permissions:
+  contents: write # merge, and delete the branch that was merged
+  pull-requests: write
+  actions: read
+
+jobs:
+  merge:
+    # A green run, on a branch the monthly bot owns. A failed run merges
+    # nothing at all: project rule 4, better to stay on the last green month.
+    if: >-
+      github.event.workflow_run.conclusion == 'success'
+      && startsWith(github.event.workflow_run.head_branch, 'release/')
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Merge the release pull request
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BRANCH: ${{ github.event.workflow_run.head_branch }}
+          RUN_URL: ${{ github.event.workflow_run.html_url }}
+        run: |
+          set -euo pipefail
+
+          pr=$(gh pr list --repo "$GITHUB_REPOSITORY" --head "$BRANCH" \
+                 --state open --json number --jq '.[0].number // empty')
+          if [ -z "$pr" ]; then
+            echo "no open pull request on $BRANCH, nothing to merge"
+            exit 0
+          fi
+
+          # `--merge`, not `--squash`: the commit the bot wrote is the one whose
+          # version the image carries, and it has to stay in history for the tag
+          # this is about to trigger to point at something that exists. A squash
+          # would rewrite it, and the release would then be traceable to no
+          # commit anyone can check out.
+          gh pr merge "$pr" --repo "$GITHUB_REPOSITORY" --merge --delete-branch
+
+          # The merge pushes to main, which starts `build` once more: *that* run
+          # is the one whose artifacts get tagged and published, because it is the
+          # one whose commit is on main. The checks a reader sees on this pull
+          # request are not the bytes that ship, and this note says so rather than
+          # leaving it to be discovered.
+          {
+            echo "### Merged #$pr"
+            echo
+            echo "CI was green on $RUN_URL, so this pull request merged itself."
+            echo
+            echo "The push to \`main\` now rebuilds the commit that landed. That"
+            echo "run cuts the \`v<version>\` tag and publishes the release from its"
+            echo "own artifacts - no third build of the same tree."
+          } >> "$GITHUB_STEP_SUMMARY"

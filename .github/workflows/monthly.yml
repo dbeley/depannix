@@ -1,9 +1,20 @@
 name: monthly
 
 # One release a month, with no human intervention: we follow nixpkgs-unstable,
-# open a pull request, CI builds and tests it, and the merge triggers a release.
-# The vYYYY.MM tag is applied by hand after the merge (or by an automatic tag if
-# you prefer - CI does exactly the same thing either way).
+# open a pull request, and CI builds and tests it.
+#
+# The rest of the chain lives in the other two workflows, because a single job
+# cannot wait hours for its own build:
+#
+#   1. this file      writes flake.lock and the CalVer version, opens the PR,
+#                     and starts `build` on that branch by hand;
+#   2. automerge.yml  merges the PR once that run is green, and only if it is;
+#   3. ci.yml         the push to main rebuilds, tags `vYYYY.MM`, and publishes
+#                     the release from that run's artifacts.
+#
+# The tag is what used to be manual, and it was the only manual step left: a
+# green main was built and then sat there, unreleased, until someone typed
+# `git tag`. It is now cut by `ci.yml` as soon as every job on main passes.
 on:
   schedule:
     - cron: "0 6 1 * *" # 06:00 UTC on the 1st of the month
@@ -70,8 +81,11 @@ jobs:
             graphical session in each of them, checks the two size budgets and
             publishes both composition manifests.
 
-            **Do not merge if any test fails**: we then stay on the last green
-            month. That is the rule that keeps a release from breaking silently.
+            **If that run is green this pull request merges itself**, and the
+            push to `main` cuts `v${{ steps.version.outputs.value }}` and
+            publishes the release from that second run's artifacts. Nothing
+            publishes if any test fails: we stay on the last green month, which
+            is the rule that keeps a release from breaking silently.
           delete-branch: true
 
       # A pull request opened with the default GITHUB_TOKEN does not trigger
