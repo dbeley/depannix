@@ -180,10 +180,83 @@ jobs:
             result-boot-gui/serial.log
           if-no-files-found: error
 
+  # The missing link. Everything above was automatic and the last step was not:
+  # a green main was built, attested, and then nothing happened, because
+  # `release` waits for a `refs/tags/v*` ref and only a person could create one.
+  # Worse, the tag a person creates carries its own `push` trigger, so publishing
+  # meant building the same commit a second time and releasing the bytes of that
+  # second build rather than the ones the tests had just passed on.
+  tag:
+    name: tag
+    needs: build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    outputs:
+      tag: ${{ steps.cut.outputs.tag }}
+      created: ${{ steps.cut.outputs.created }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          # The tag has to name the commit whose artifacts are about to be
+          # published, not whatever main points at when this step runs.
+          fetch-depth: 0
+
+      - name: Cut the tag
+        id: cut
+        env:
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          # `git tag -a` refuses to run without a committer identity and checkout
+          # sets none, so the tag would fail on the runner with "empty ident".
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          # The version in flake.nix is the one the monthly job wrote and the one
+          # embedded in the image, so it is what the tag must say. A date read
+          # here would disagree with it in any month where the bump landed late.
+          v=$(grep -oP '^\s*version = "\K[^"]+' flake.nix | head -1)
+          test -n "$v" || { echo "::error::no version in flake.nix"; exit 1; }
+          tag="v$v"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+          # One release per version, not one per push to main. A second push in
+          # the same month - a typo fix, a workflow tweak - finds the tag and
+          # stays quiet. The same guard keeps a feature PR merged before the
+          # monthly one from publishing: it carries no version the tag lacks.
+          if git ls-remote --tags origin "refs/tags/$tag" | grep -q .; then
+            echo "$tag already exists, nothing to publish"
+            echo "created=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "created=true" >> "$GITHUB_OUTPUT"
+
+          # Annotated, so the tag itself records which run earned it: the release
+          # is published from this run's artifacts, and a reader of `git log` can
+          # get back to the four builds and two boot tests behind it.
+          #
+          # Pushing it does not start a second build. `ci.yml` triggers on `v*`
+          # tags, but the tag is pushed with the default `GITHUB_TOKEN` and GitHub
+          # suppresses the runs that token creates - the same rule that forced
+          # monthly.yml to dispatch its CI by hand. A tag pushed by a person still
+          # builds and releases on its own, which is the recovery path when the
+          # publish step below fails on a tag that is already cut.
+          git tag -a "$tag" -m "Dépannix $v" -m "Built, boot-tested and attested by $RUN_URL"
+          git push origin "$tag"
+
   release:
     name: release
-    needs: build
-    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [build, tag]
+    # Two ways in, one set of artifacts. A `v*` tag pushed by hand builds the tag
+    # and releases it, as before. A green push to main is tagged just above and
+    # released from the very run that tested it: no third build, and the
+    # published bytes are the ones the boot tests ran on. `always()` is needed
+    # because one of the two paths always leaves `tag` skipped, and a skipped
+    # need skips its dependants by default.
+    if: >-
+      always()
+      && needs.build.result == 'success'
+      && (startsWith(github.ref, 'refs/tags/v')
+          || needs.tag.outputs.created == 'true')
     runs-on: ubuntu-24.04
     # download-artifact preserves the structure the upload used. The upload
     # matched two path patterns, so the least common ancestor is the repository
@@ -192,6 +265,10 @@ jobs:
     env:
       ISO_DIR: dist/result-iso/iso
       MANIFEST_DIR: dist/result-manifest
+      # On a tag push `tag` was skipped, and `github.ref_name` is the tag. On a
+      # main push `github.ref_name` is "main", which is not a tag and not a
+      # version: the name comes from the job that cut it instead.
+      TAG_NAME: ${{ needs.tag.outputs.tag || github.ref_name }}
     steps:
       - uses: actions/checkout@v5
 
@@ -395,7 +472,7 @@ jobs:
           if [ -f dist/SHA256SUMS.minisig ]; then
             files+=(dist/SHA256SUMS.minisig)
           fi
-          gh release create "${GITHUB_REF_NAME}" \
-            --title "Dépannix ${GITHUB_REF_NAME}" \
+          gh release create "$TAG_NAME" \
+            --title "Dépannix $TAG_NAME" \
             --notes-file dist/RELEASE_NOTES.md \
             "${files[@]}"

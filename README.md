@@ -188,6 +188,22 @@ Most paths are confirmed this way. The rest are the NixOS system itself, the
 generated `/etc` and the systemd units: they exist in no binary cache, so nothing
 can confirm them except a rebuild, which is what the next section is for.
 
+## How a release is cut
+
+Nothing here is typed by a person on the first of the month:
+
+1. `monthly.yml` moves `flake.lock` to the current `nixos-unstable`, writes the
+   CalVer version, opens a pull request, and starts CI on that branch.
+2. `automerge.yml` merges that pull request once the run is green, and only
+   then. A red run merges nothing: the last green month stays the release.
+3. The push to `main` rebuilds, and `ci.yml` cuts `vYYYY.MM` from the version in
+   `flake.nix` and publishes the release from the artifacts of that same run —
+   the bytes the boot tests ran on, attested, with no third build.
+
+One release per version: a later push to `main` in the same month finds the tag
+already there and publishes nothing. A `v*` tag pushed by hand still builds and
+releases on its own, which is how a failed publish is retried.
+
 ## Building it yourself
 
 ```bash
