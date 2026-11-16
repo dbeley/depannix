@@ -8,6 +8,15 @@ on:
       - "**.md"
       - "docs/**"
   pull_request:
+    # The same filter as `push`. It was missing here, so a PR that only touched
+    # a README still paid for four full builds - two flavours on two
+    # architectures. A `push` filter alone does not cover that: pull requests are
+    # a separate event. Note that a filtered-out PR reports no check at all
+    # rather than a green one, so `build` must not be required by branch
+    # protection while this is in place.
+    paths-ignore:
+      - "**.md"
+      - "docs/**"
   workflow_dispatch:
 
 concurrency:
