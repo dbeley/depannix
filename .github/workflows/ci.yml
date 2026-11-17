@@ -311,6 +311,35 @@ jobs:
           path: dist
           merge-multiple: true
 
+      # GitHub refuses any release asset of 2 GiB or more: "size must be less
+      # than 2147483648". The minimal image fits; the desktop one is ~2.8 GiB and
+      # did not have to be a problem until the desktop flavour existed. It became
+      # one on 2026.11, the first release that carried it: four images built,
+      # booted and attested, then a publish that failed on a limit no guard
+      # mentioned.
+      #
+      # Splitting is the only option that keeps the image on the release page.
+      # Compressing it again would not: the ISO is zstd-19 already, so the only
+      # thing a second compressor can do is fail to shrink it.
+      - name: Split the images GitHub refuses
+        run: |
+          shopt -s nullglob
+          mkdir -p dist/parts
+          for iso in "$ISO_DIR"/*.iso; do
+            base=$(basename "$iso")
+            size=$(stat -c%s "$iso")
+            if [ "$size" -lt 2147483648 ]; then
+              printf '%s: %s bytes, under the limit, shipping as it is\n' "$base" "$size"
+              continue
+            fi
+            # 1900 MiB and not a rounding of the limit: the check applies to the
+            # object actually uploaded, and a part that lands one byte over is
+            # refused after the whole upload has been sent.
+            split -b 1900M -d -a 2 "$iso" "dist/parts/$base.part-"
+            printf '%s: %s bytes, split into %s parts\n' "$base" "$size" \
+              "$(find dist/parts -name "$base.part-*" | wc -l)"
+          done
+
       - name: Checksums
         run: |
           ls -l "$ISO_DIR" "$MANIFEST_DIR"
@@ -321,6 +350,12 @@ jobs:
           {
             sha256sum "$ISO_DIR"/*.iso
             sha256sum "$MANIFEST_DIR"/closure-*.json "$MANIFEST_DIR"/closure-sri-*.tsv
+            # The split images are hashed under their own names, so a download can
+            # be checked before it is reassembled as well as after: the whole
+            # image's own line is above, and `cat part-*` must land on it.
+            if [ -n "$(ls -A dist/parts 2>/dev/null)" ]; then
+              ( cd dist/parts && sha256sum * )
+            fi
           } | sed -e "s|$ISO_DIR/||" -e "s|$MANIFEST_DIR/||" > dist/SHA256SUMS
           cat dist/SHA256SUMS
 
@@ -405,6 +440,26 @@ jobs:
             echo '```'
           } > dist/RELEASE_NOTES.md
 
+          # Only when there was something to split: a section explaining parts
+          # that are not there would be a lie of the same kind as a "Not signed"
+          # heading on a signed release.
+          if [ -n "$(ls -A dist/parts 2>/dev/null)" ]; then
+            cat >> dist/RELEASE_NOTES.md <<'PARTS_EOF'
+
+          ## The desktop images are published in parts
+
+          GitHub refuses any release asset of 2 GiB or more, and the desktop
+          image is larger than that. Its parts are `.part-00`, `.part-01`, ... in
+          order: reassemble before writing the stick, then check the whole image,
+          not the parts.
+
+          ```bash
+          cat depannix-desktop-<release>-<system>.iso.part-* > depannix-desktop-<release>-<system>.iso
+          sha256sum -c SHA256SUMS
+          ```
+          PARTS_EOF
+          fi
+
           cat >> dist/RELEASE_NOTES.md <<'NOTES_EOF'
 
           ## Verify
@@ -482,9 +537,19 @@ jobs:
           # the proof but not the instructions would be a strange kind of
           # honesty.
           files=(
-            "$ISO_DIR"/*.iso
             dist/SHA256SUMS
           )
+          # An image over the 2 GiB limit ships as its parts, and the whole file
+          # is then on the page only as a line in SHA256SUMS: `cat part-*` has to
+          # land on it, which is what makes the parts trustworthy.
+          for iso in "$ISO_DIR"/*.iso; do
+            base=$(basename "$iso")
+            if compgen -G "dist/parts/$base.part-*" >/dev/null; then
+              files+=(dist/parts/"$base".part-*)
+            else
+              files+=("$iso")
+            fi
+          done
           # Two files per build, and no more. A release page with a dozen assets
           # already buries the one file a visitor came for. Dropped as
           # redundant or derivable: the bare path list and the total NAR size
@@ -522,6 +587,13 @@ jobs:
           test -n "$TAG_NAME" || { echo "::error::TAG_NAME is empty"; exit 1; }
           for f in "${files[@]}"; do
             [ -f "$f" ] || { echo "::error::missing asset: $f"; exit 1; }
+            # The limit that cost this release a night's sleep, checked before gh
+            # sends two gigabytes up a wire and is told no at the end of it.
+            size=$(stat -c%s "$f")
+            if [ "$size" -ge 2147483648 ]; then
+              echo "::error::$f is $size bytes: GitHub refuses any release asset of 2 GiB (2147483648 bytes) or more"
+              exit 1
+            fi
           done
           [ -s dist/RELEASE_NOTES.md ] || { echo "::error::dist/RELEASE_NOTES.md is empty or missing"; exit 1; }
           printf 'release %s with %d assets\n' "$TAG_NAME" "${#files[@]}"

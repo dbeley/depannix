@@ -162,6 +162,15 @@ in two encodings, and the signed checksums:
 | `closure-sri-<flavour>-<system>.tsv` | the same paths and hashes, in the encoding narinfo files use |
 | `SHA256SUMS` and `SHA256SUMS.minisig` | the hashes of all of the above, signed |
 
+The desktop image is larger than the 2 GiB GitHub allows a release asset, so it
+ships as `depannix-desktop-<release>-<system>.iso.part-00`, `.part-01`, ... in
+order. Reassemble and check the whole image, not the parts:
+
+```bash
+cat depannix-desktop-<release>-<system>.iso.part-* > depannix-desktop-<release>-<system>.iso
+sha256sum -c SHA256SUMS
+```
+
 Checking the composition needs no Nix and no trust in whoever ran the build, only
 one plain HTTP request per package against the public binary cache:
 
