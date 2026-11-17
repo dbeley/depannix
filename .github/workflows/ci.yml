@@ -204,6 +204,7 @@ jobs:
       - name: Cut the tag
         id: cut
         env:
+          GH_TOKEN: ${{ github.token }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           # `git tag -a` refuses to run without a committer identity and checkout
@@ -223,9 +224,23 @@ jobs:
           # the same month - a typo fix, a workflow tweak - finds the tag and
           # stays quiet. The same guard keeps a feature PR merged before the
           # monthly one from publishing: it carries no version the tag lacks.
+          #
+          # "Tagged" is not the same condition as "released", and conflating them
+          # is how 2026.11 stayed a tag with no release page: the tag was cut, the
+          # publish step failed, and every later push found the tag and published
+          # nothing, for ever. A version whose release page is missing is
+          # therefore retried from this run's artifacts rather than skipped. The
+          # images are byte-identical build to build, so retrying from a later
+          # commit publishes the same bytes, and the tag keeps naming the commit
+          # that first earned it.
           if git ls-remote --tags origin "refs/tags/$tag" | grep -q .; then
-            echo "$tag already exists, nothing to publish"
-            echo "created=false" >> "$GITHUB_OUTPUT"
+            if gh release view "$tag" --json tagName >/dev/null 2>&1; then
+              echo "$tag is tagged and released, nothing to publish"
+              echo "created=false" >> "$GITHUB_OUTPUT"
+            else
+              echo "$tag is tagged but has no release: publishing it now"
+              echo "created=true" >> "$GITHUB_OUTPUT"
+            fi
             exit 0
           fi
           echo "created=true" >> "$GITHUB_OUTPUT"
@@ -265,12 +280,30 @@ jobs:
     env:
       ISO_DIR: dist/result-iso/iso
       MANIFEST_DIR: dist/result-manifest
-      # On a tag push `tag` was skipped, and `github.ref_name` is the tag. On a
-      # main push `github.ref_name` is "main", which is not a tag and not a
-      # version: the name comes from the job that cut it instead.
-      TAG_NAME: ${{ needs.tag.outputs.tag || github.ref_name }}
     steps:
       - uses: actions/checkout@v5
+
+      # Resolved in a step, not from `needs` in the job's `env`. There a name
+      # that fails to resolve is simply empty, and an empty name made
+      # `gh release create` fail in three seconds with a message that no longer
+      # exists anywhere: the log endpoint needs admin, and the step printed to
+      # stdout. So the name is computed, validated, and printed here, and a bad
+      # one stops the job before anything is half-published.
+      - name: Resolve the release name
+        id: name
+        env:
+          FROM_TAG_JOB: ${{ needs.tag.outputs.tag }}
+        run: |
+          name="${FROM_TAG_JOB:-$GITHUB_REF_NAME}"
+          case "$name" in
+            v[0-9]*) ;;
+            *)
+              echo "::error::refusing to publish: '$name' is neither a v* tag nor a tag cut by the tag job"
+              exit 1
+              ;;
+          esac
+          echo "value=$name" >> "$GITHUB_OUTPUT"
+          echo "release name: $name"
 
       - uses: actions/download-artifact@v8
         with:
@@ -437,6 +470,7 @@ jobs:
       - name: Publish
         env:
           GH_TOKEN: ${{ github.token }}
+          TAG_NAME: ${{ steps.name.outputs.value }}
         run: |
           # The signature is optional: listing SHA256SUMS.minisig
           # unconditionally would fail every unsigned release, while that is the
@@ -451,28 +485,54 @@ jobs:
             "$ISO_DIR"/*.iso
             dist/SHA256SUMS
           )
-          # Two files per architecture, and no more. A release page with
-          # eighteen assets buries the one file a visitor came for. Dropped as
+          # Two files per build, and no more. A release page with a dozen assets
+          # already buries the one file a visitor came for. Dropped as
           # redundant or derivable: the bare path list and the total NAR size
           # (both one jq call on the JSON), the per-architecture README (its
           # content is in the release notes and in the project README), the
           # manifest's own checksums (SHA256SUMS covers them now), and the
           # registration file, which rebuilding
-          # `.#packages.<system>.closure-manifest` regenerates.
+          # `.#packages.<system>.closure-manifest-<flavour>` regenerates.
           #
-          # Every published name carries the system it describes: both
-          # architectures ship a manifest, and un-suffixed names once meant the
-          # last one to land overwrote the other.
-          for s in x86_64-linux aarch64-linux; do
-            files+=(
-              "$MANIFEST_DIR"/closure-$s.json
-              "$MANIFEST_DIR"/closure-sri-$s.tsv
-            )
+          # Every published name carries both the flavour and the system it
+          # describes, because all four builds have a different closure and a
+          # manifest that does not say which build it belongs to is a manifest a
+          # verifier applies to the wrong image. This loop was not updated when
+          # `flavour` joined the name: it kept asking for `closure-<system>.json`,
+          # a file that had been renamed, so `gh release create` was handed four
+          # paths that did not exist and gave up in three seconds without
+          # uploading anything. The pre-flight below now names such a path before
+          # gh is called at all.
+          for f in minimal desktop; do
+            for s in x86_64-linux aarch64-linux; do
+              files+=(
+                "$MANIFEST_DIR"/closure-$f-$s.json
+                "$MANIFEST_DIR"/closure-sri-$f-$s.tsv
+              )
+            done
           done
           if [ -f dist/SHA256SUMS.minisig ]; then
             files+=(dist/SHA256SUMS.minisig)
           fi
-          gh release create "$TAG_NAME" \
-            --title "Dépannix $TAG_NAME" \
-            --notes-file dist/RELEASE_NOTES.md \
-            "${files[@]}"
+
+          # Pre-flight, then a call whose stderr is captured and re-emitted as an
+          # annotation. Both exist because of 2026.11: the step failed in three
+          # seconds, the job went red, and the reason was in a log only a repo
+          # admin could open. An annotation is readable afterwards, by anyone.
+          test -n "$TAG_NAME" || { echo "::error::TAG_NAME is empty"; exit 1; }
+          for f in "${files[@]}"; do
+            [ -f "$f" ] || { echo "::error::missing asset: $f"; exit 1; }
+          done
+          [ -s dist/RELEASE_NOTES.md ] || { echo "::error::dist/RELEASE_NOTES.md is empty or missing"; exit 1; }
+          printf 'release %s with %d assets\n' "$TAG_NAME" "${#files[@]}"
+
+          if ! output=$(gh release create "$TAG_NAME" \
+                 --title "Dépannix $TAG_NAME" \
+                 --notes-file dist/RELEASE_NOTES.md \
+                 "${files[@]}" 2>&1); then
+            # One line, because that is what an annotation renders; the full text
+            # stays in the log for whoever can read it.
+            echo "::error::gh release create $TAG_NAME failed: $(printf '%s' "$output" | tr '\n' ' ' | cut -c1-900)"
+            exit 1
+          fi
+          printf '%s\n' "$output"
