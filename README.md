@@ -39,17 +39,48 @@ there, screenshot and all, rather than asserted.
 
 ## Download
 
-[`v2026.10`](https://github.com/dbeley/depannix/releases/tag/v2026.10) has four
-images: two flavours, two architectures. Take the file you want, the one ending in
-`.iso`: `depannix-minimal-<release>-<system>.iso` or
-`depannix-desktop-<release>-<system>.iso`. The other assets are the proof of what
-is inside them.
+[The latest release](https://github.com/dbeley/depannix/releases/latest) has four
+images, two flavours by two architectures, named
+`depannix-<flavour>-<release>-<system>.iso`. On an ordinary PC take `x86_64`, and
+take `minimal` unless you want GNOME and Firefox.
 
-Write it to a whole device, never to a partition:
+The minimal images download as a single file. The desktop ones are about 2.9 GiB,
+above the 2 GiB GitHub allows for one release asset, so they ship in parts: byte
+slices, `part-00` first. Join them before writing the stick.
+
+```bash
+# the minimal image: one file, nothing to join
+gh release download --repo dbeley/depannix -p 'depannix-minimal-*-x86_64-linux.iso'
+
+# the desktop image: parts, then joined. `release` is the version in the asset
+# names, not a tag you have to look up: gh takes the latest release by itself.
+release=<release>
+gh release download --repo dbeley/depannix \
+  -p "depannix-desktop-$release-x86_64-linux.iso.part-*" \
+  -p SHA256SUMS -p SHA256SUMS.minisig
+cat depannix-desktop-$release-x86_64-linux.iso.part-* \
+  > depannix-desktop-$release-x86_64-linux.iso
+sha256sum -c SHA256SUMS --ignore-missing   # skips the manifests, which you did not take
+```
+
+`part-00` begins with the boot sector, so there is nothing to unpack: `cat` in
+order is the whole step. The joined file then matches its own line in
+`SHA256SUMS`, published for exactly that check, since the image itself is not
+downloadable whole.
+
+With Nix installed, build those same bytes instead. The image is reproducible, so
+the tagged commit yields the released file:
+
+```bash
+nix build .#desktop          # or .#minimal;  .#desktop-fast skips the slow compression
+ls result/iso/
+```
+
+Either way, write to a whole device, never to a partition:
 
 ```bash
 lsblk -o NAME,SIZE,TYPE,TRAN,MODEL     # find your stick: TRAN=usb
-sudo dd if=depannix-minimal-2026.10-x86_64-linux.iso of=/dev/sdX bs=4M status=progress conv=fsync
+sudo dd if=<image>.iso of=/dev/sdX bs=4M status=progress conv=fsync
 ```
 
 Then check what you hold, before trusting it:
@@ -57,7 +88,7 @@ Then check what you hold, before trusting it:
 ```bash
 sha256sum -c SHA256SUMS
 minisign -V -p depannix.pub -m SHA256SUMS
-gh attestation verify depannix-minimal-*.iso --repo dbeley/depannix
+gh attestation verify <image>.iso --repo dbeley/depannix
 ```
 
 `gh attestation verify` exits 0 when the attestation is found and valid, and 1
@@ -70,7 +101,7 @@ same place as the signature it validates.
 You get a root shell on a live medium, and the medium introduces itself:
 
 ```
-Dépannix 2026.10 - minimal rescue image (x86_64-linux)
+Dépannix <release> - minimal rescue image (x86_64-linux)
 
 You are root on a live medium: nothing here survives a reboot.
   depannix tools        what this image carries
@@ -162,14 +193,9 @@ in two encodings, and the signed checksums:
 | `closure-sri-<flavour>-<system>.tsv` | the same paths and hashes, in the encoding narinfo files use |
 | `SHA256SUMS` and `SHA256SUMS.minisig` | the hashes of all of the above, signed |
 
-The desktop image is larger than the 2 GiB GitHub allows a release asset, so it
-ships as `depannix-desktop-<release>-<system>.iso.part-00`, `.part-01`, ... in
-order. Reassemble and check the whole image, not the parts:
-
-```bash
-cat depannix-desktop-<release>-<system>.iso.part-* > depannix-desktop-<release>-<system>.iso
-sha256sum -c SHA256SUMS
-```
+The desktop images are the one exception to the naming: they ship as
+`depannix-desktop-<release>-<system>.iso.part-00`, `.part-01`, ... because of the
+2 GiB asset limit. Join them as shown in [Download](#download).
 
 Checking the composition needs no Nix and no trust in whoever ran the build, only
 one plain HTTP request per package against the public binary cache:
@@ -197,22 +223,6 @@ Most paths are confirmed this way. The rest are the NixOS system itself, the
 generated `/etc` and the systemd units: they exist in no binary cache, so nothing
 can confirm them except a rebuild, which is what the next section is for.
 
-## How a release is cut
-
-Nothing here is typed by a person on the first of the month:
-
-1. `monthly.yml` moves `flake.lock` to the current `nixos-unstable`, writes the
-   CalVer version, opens a pull request, and starts CI on that branch.
-2. `automerge.yml` merges that pull request once the run is green, and only
-   then. A red run merges nothing: the last green month stays the release.
-3. The push to `main` rebuilds, and `ci.yml` cuts `vYYYY.MM` from the version in
-   `flake.nix` and publishes the release from the artifacts of that same run —
-   the bytes the boot tests ran on, attested, with no third build.
-
-One release per version: a later push to `main` in the same month finds the tag
-already there and publishes nothing. A `v*` tag pushed by hand still builds and
-releases on its own, which is how a failed publish is retried.
-
 ## Building it yourself
 
 ```bash
@@ -229,64 +239,12 @@ Two builds of the same revision, on two different machines, produce the same
 bytes: same sha256, same sector count. That is what makes the published manifest
 worth anything.
 
-## Project rules
-
-1. No tool enters the image without its measured closure size, and without one
-   line saying what it is for. Both are mechanical: the catalogue in
-   `nix/tool-catalog.nix` builds the image, and an assertion refuses to evaluate
-   when an entry lacks either.
-2. Nothing that cannot be redistributed. `allowUnfree` is off and firmware is
-   limited to the redistributable set, which is what makes publishing the
-   composition legitimate.
-3. No secret and no personal key in the artifact. SSH accepts keys only, never a
-   password, and no key ships by default.
-4. No release ships if a test fails. Better to stay on the last green month than
-   to publish an image that does not boot.
-
 ## Limitations
 
 - **Secure Boot must be disabled.** The image carries no Secure Boot signature:
-  minisign signs the checksums, not the boot chain. This is the main gap
-  compared with commercial rescue media, and a project of its own.
-- **Write the stick with `dd`, or use a launcher's plain entry.** The image boots
-  on its own, which is the path CI exercises, or from a launcher that provides
-  `iso_path`, the convention grubfm follows and the nixpkgs ISO template uses in
-  `findiso=${iso_path}`. Ventoy does not provide it: it injects its own hook
-  instead, and only on its normal path, so its "Grub2 Mode" cannot boot this
+  minisign signs the checksums, not the boot chain.
+- **Write it with `dd`.** A launcher works only if it provides `iso_path`, the
+  convention the nixpkgs ISO template uses; Ventoy does not, and cannot boot this
   image.
-- **The aarch64 boot test is manual.** Free arm64 runners expose no `/dev/kvm`,
-  so the aarch64 image is built and attested but not booted in CI.
-- **No persistence.** Nothing you do in a session survives a reboot: this is a
-  live medium, and v1 has no way to keep anything on the stick.
-- **The disks you plug in are not mounted for you.** Automount is off in both
-  images, GNOME included, where the default would mount, write to, and replay the
-  journal of the very disk being rescued. Mount explicitly, read-only first.
-- **The minimal image's session carries no graphical application.** On Wayland a
-  GTK program needs OpenGL, which costs 826 MiB of the image, so everything with
-  a screen there is GPU-free. Partitioning with a screen is in the desktop image.
-- **`root` and `nixos` have no password** in a session, like any live medium. Do
-  not leave the stick plugged into a networked machine.
-
-## Documentation and layout
-
-`docs/design.md` has the architecture decisions and their rationale,
-`docs/budget.md` the measured closure of everything in the image, and
-`docs/discovery.md` how the medium describes itself.
-
-```
-flake.nix                    inputs and outputs: image, boot tests, size guard
-modules/base.nix             foundation: firmware, kernel, licences, SSH, marker
-modules/tools.nix            wiring built from the catalogue, with assertions
-modules/iso.nix              name, boot menu, compression, volume
-modules/discovery.nix        greeting, shell hook, files on the medium
-modules/wayland.nix          the minimal image's Wayland session: labwc
-modules/desktop.nix          the desktop image: GNOME, Firefox, no automount
-nix/session-minimal.sh       starts the labwc session, and reports it
-nix/session-report.sh        reports the GNOME session, from inside the session
-nix/tool-catalog.nix         the catalogue: name, category, gesture
-nix/discovery-bundle.nix     generates the command, the catalogue and the help
-nix/depannix.sh              the `depannix` command itself
-help/help.txt                the procedures, written by hand
-nix/qemu-run.sh              QEMU launch: interactive, marker test, or graphical test
-nix/closure-manifest.nix     the composition manifest, which is the proof
-```
+- **`root` and `nixos` have no password**, like any live medium. Do not leave the
+  stick plugged into a networked machine.
